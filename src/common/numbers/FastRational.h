@@ -128,6 +128,7 @@ public:
     inline FastRational(word n, uword d);
     // The string must be in the format accepted by mpq_set_str, e.g., "1/2"
     explicit FastRational(const char* s, const int base = 10);
+    explicit FastRational(const mpq_class & val);
     inline FastRational  (const FastRational &);
     inline FastRational  (FastRational&& other) noexcept;
 

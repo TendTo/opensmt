@@ -40,6 +40,16 @@ FastRational::FastRational( const char * s, const int base )
         kill_mpq( );
     assert( isWellFormed( ) );
 }
+FastRational::FastRational( const mpq_class & q )
+{
+    mpq = pool.alloc();
+    mpq_set(mpq, q.get_mpq_t());
+    state = State::MPQ_ALLOCATED_AND_VALID;
+    try_fit_word();
+    if ( wordPartValid() )
+        kill_mpq( );
+    assert( isWellFormed( ) );
+}
 
 FastRational::FastRational(mpz_t z)
 {

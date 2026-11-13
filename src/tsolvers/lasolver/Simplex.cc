@@ -4,6 +4,8 @@
 
 #include "Simplex.h"
 
+#include "ExternalQsoptex.h"
+
 #include <common/InternalException.h>
 
 #include <algorithm>
@@ -41,6 +43,10 @@ Simplex::Explanation Simplex::checkSimplex() {
 
     // keep doing pivotAndUpdate until the SAT/UNSAT status is confirmed
     while (true) {
+        if (config.pivot_threshold() >= 0 && repeats >= config.pivot_threshold()) {
+            auto external_simplex = externallp::ExternalLpSolver::get_external_lp_solver(config);
+        }
+
         repeats++;
         LVRef x = LVRef::Undef;
 
