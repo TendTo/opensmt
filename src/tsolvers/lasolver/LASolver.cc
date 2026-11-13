@@ -77,7 +77,7 @@ LASolver::LASolver(SolverDescr dls, SMTConfig & c, ArithLogic & l)
         , logic(l)
         , laVarMapper(l)
         , boundStore(laVarStore)
-        , simplex(boundStore)
+        , simplex(boundStore, config)
 {
     dec_limit.push(0);
     status = INIT;

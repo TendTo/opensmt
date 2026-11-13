@@ -36,8 +36,8 @@ public:
 
     using Explanation = std::vector<ExplTerm>;
 
-    Simplex(std::unique_ptr<LRAModel> model, LABoundStore & bs) : model(std::move(model)), boundStore(bs) {}
-    Simplex(LABoundStore & bs) : model(new LRAModel(bs)), boundStore(bs) {}
+    Simplex(std::unique_ptr<LRAModel> model, LABoundStore & bs, const SMTConfig & config) : model(std::move(model)), boundStore(bs), config(config) {}
+    Simplex(LABoundStore & bs, const SMTConfig & config) : model(new LRAModel(bs)), boundStore(bs), config(config) {}
     ~Simplex();
 
     void initModel() { model->init(); }
@@ -193,6 +193,7 @@ private:
     // Keeping track of activated bounds
     std::vector<std::pair<LVRef, LABoundRef>> bufferOfActivatedBounds;
     std::vector<unsigned int> boundsActivated;
+    const SMTConfig & config;
 };
 } // namespace opensmt
 
