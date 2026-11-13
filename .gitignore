@@ -49,3 +49,4 @@ regression/state-dump/foo-00.osmt2
 regression/state-dump/foo-01.osmt2
 src/PySMT/opensmt_python_wrap.c
 src/api/.dirstamp
+temp/

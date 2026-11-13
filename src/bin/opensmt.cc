@@ -252,6 +252,10 @@ SMTConfig parseCMDLineArgs( int argc, char * argv[ ] )
         getUcore,
         minUcore,
         fullUcore,
+        pivotThreshold,
+        externalLpSolver,
+        epsilonMode,
+        delta
     };
 
     SMTConfig res;
@@ -273,13 +277,19 @@ SMTConfig parseCMDLineArgs( int argc, char * argv[ ] )
             {"print-cores-full", no_argument, &selectedLongOpt, to_underlying(LongOpt::fullUcore)},
             {"produce-interpolants", no_argument, nullptr, 'i'},
             {"pipe", no_argument, nullptr, 'p'},
+
+            {"pivot-threshold", required_argument, &selectedLongOpt, to_underlying(LongOpt::pivotThreshold)},
+            {"external-lp-solver", required_argument, &selectedLongOpt, to_underlying(LongOpt::externalLpSolver)},
+            {"epsilon-mode", no_argument, &selectedLongOpt, to_underlying(LongOpt::epsilonMode)},
+            {"delta", required_argument, &selectedLongOpt, to_underlying(LongOpt::delta)},
+
             {0, 0, 0, 0}
         };
 
     const char* msg;
     while (true) {
         int option_index = 0;
-        int c = getopt_long(argc, argv, "r:hdivp", long_options, &option_index);
+        int c = getopt_long(argc, argv, "r:hdivpP:e:ED:", long_options, &option_index);
         if (c == -1) { break; }
 
         switch (c) {
@@ -305,6 +315,18 @@ SMTConfig parseCMDLineArgs( int argc, char * argv[ ] )
                         break;
                     case LongOpt::fullUcore:
                         res.setOption(SMTConfig::o_print_cores_full, SMTOption(true), msg);
+                        break;
+                    case LongOpt::pivotThreshold:
+                        res.setOption(SMTConfig::o_pivot_threshold, SMTOption(atoi(optarg)), msg);
+                        break;
+                    case LongOpt::externalLpSolver:
+                        res.setOption(SMTConfig::o_external_lp_solver, SMTOption(atoi(optarg)), msg);
+                        break;
+                    case LongOpt::epsilonMode:
+                        res.setOption(SMTConfig::o_epsilon_mode, SMTOption(true), msg);
+                        break;
+                    case LongOpt::delta:
+                        res.setOption(SMTConfig::o_delta, SMTOption(atof(optarg)), msg);
                         break;
                 }
                 break;

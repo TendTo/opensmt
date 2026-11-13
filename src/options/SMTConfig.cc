@@ -530,6 +530,11 @@ namespace opensmt {
   const char* SMTConfig::o_global_declarations = ":global-declarations";
   const char* SMTConfig::o_sat_split_mode     = ":split-mode";
 
+  const char* SMTConfig::o_pivot_threshold = ":pivot-threshold";
+  const char* SMTConfig::o_external_lp_solver = ":external-lp-solver";
+  const char* SMTConfig::o_epsilon_mode = ":epsilon-mode";
+  const char* SMTConfig::o_delta = ":delta";
+
   char* SMTConfig::server_host=NULL;
   uint16_t SMTConfig::server_port = 0;
   char* SMTConfig::database_host=NULL;

@@ -1872,7 +1872,12 @@ void CoreSMTSolver::printStatistics( std::ostream & os )
     os << "; Init clauses.............: " << clauses.size() << std::endl;
     os << "; Variables................: " << nVars() << std::endl;
     if (config.sat_split_type() != spt_none)
-    os << "; Ill-adviced splits.......: " << unadvised_splits << std::endl;
+        os << "; Ill-adviced splits.......: " << unadvised_splits << std::endl;
+    os << "; Pivot threshold..........: " << config.pivot_threshold() << std::endl;
+    os << "; External LP solver.......: " << config.external_lp_solver() << std::endl;
+    os << "; Epsilon mode.............: " << config.epsilon_mode() << std::endl;
+    os << "; Delta....................: " << config.delta() << std::endl;
+
 }
 #endif // STATISTICS
 

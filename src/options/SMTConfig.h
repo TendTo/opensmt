@@ -206,6 +206,7 @@ namespace opensmt {
   static const struct SpType spt_scatter   = { 2 };
 
   enum class SpUnit : char { search_counter, time };
+  enum class ExternalLpSolver : char { qsoptex, soplex };
 
   static const struct SpPref sppref_tterm = { 0 };
   static const struct SpPref sppref_blind = { 1 };
@@ -324,6 +325,11 @@ namespace opensmt {
     static const char* o_global_declarations;
 
     static const char* o_sat_split_mode;
+
+    static const char* o_pivot_threshold;
+    static const char* o_external_lp_solver;
+    static const char* o_epsilon_mode;
+    static const char* o_delta;
   private:
 
     static const char* s_err_not_str;
@@ -867,6 +873,35 @@ namespace opensmt {
           return false;
       }
 
+    int pivot_threshold() const {
+        if (optionTable.has(o_pivot_threshold)) {
+          return optionTable[o_pivot_threshold]->getValue().numval;
+        }
+        return -1;
+    }
+
+    ExternalLpSolver external_lp_solver() const {
+        if (optionTable.has(o_external_lp_solver)) {
+            switch (optionTable[o_external_lp_solver]->getValue().numval) {
+                case 1: return ExternalLpSolver::soplex;
+                default: return ExternalLpSolver::qsoptex;
+            }
+        }
+        return ExternalLpSolver::qsoptex;
+    }
+
+    bool epsilon_mode() const {
+        return optionTable.has(o_epsilon_mode) ? optionTable[o_epsilon_mode]->getValue().numval : false;
+    }
+
+    double delta() const {
+        if (optionTable.has(o_delta)) {
+            return optionTable[o_delta]->getValue().getDoubleVal();
+        }
+        return -1;
+    }
+
+
   //  int          produce_stats;                // Should print statistics ?
     int          print_stats;                  // Should print statistics ?
     int          print_proofs_smtlib2;         // Should print proofs ?
@@ -970,6 +1005,15 @@ namespace opensmt {
     std::ofstream     out;                          // Regular output channel
     std::ofstream     err;                          // Diagnostic output channel
   };
+
+inline std::ostream& operator<<(std::ostream& os, const ExternalLpSolver config) {
+    switch (config) {
+        case ExternalLpSolver::soplex:
+            return os << "soplex";
+        default:
+            return os << "qsoptex";
+    }
+}
 }
 
 #endif
