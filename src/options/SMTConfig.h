@@ -883,11 +883,16 @@ namespace opensmt {
     ExternalLpSolver external_lp_solver() const {
         if (optionTable.has(o_external_lp_solver)) {
             switch (optionTable[o_external_lp_solver]->getValue().numval) {
+                case 0: return ExternalLpSolver::qsoptex;
                 case 1: return ExternalLpSolver::soplex;
-                default: return ExternalLpSolver::qsoptex;
+                default: throw std::runtime_error("Invalid external lp solver: " + std::to_string(optionTable[o_external_lp_solver]->getValue().numval) + ". Accepted values are 0 (qsotex), 1 (soplex)");
             }
         }
+#ifdef OPENSSMT_ENABLE_QSOPTEX
         return ExternalLpSolver::qsoptex;
+#else
+        return ExternalLpSolver::soplex;
+#endif
     }
 
     bool epsilon_mode() const {

@@ -49,6 +49,8 @@ option(MATRIX_DEBUG "Trace matrix operations (noisy output)" OFF)
 option(STATISTICS "Compute and print solver's statistics" OFF)
 
 option(ENABLE_LINE_EDITING "Enable line editing with libedit" OFF)
+option(ENABLE_SOPLEX       "Use SoPlex simplex solver" OFF)
+option(ENABLE_QSOPTEX      "Use Qsopt_ex simplex solver" OFF)
 
 option(BUILD_STATIC_LIBS "Build static library" ON)
 option(BUILD_SHARED_LIBS "Build shared library" ON)
@@ -72,6 +74,16 @@ find_package(GMP REQUIRED)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
+
+if(ENABLE_SOPLEX)
+    find_package(soplex REQUIRED)
+    add_definitions(-DOPENSSMT_ENABLE_SOPLEX)
+endif()
+
+if(ENABLE_QSOPTEX)
+    find_package(Qsoptex REQUIRED)
+    add_definitions(-DOPENSSMT_ENABLE_QSOPTEX)
+endif()
 
 include_directories(
     ${CMAKE_SOURCE_DIR}
