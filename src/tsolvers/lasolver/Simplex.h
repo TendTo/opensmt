@@ -142,6 +142,8 @@ public:
         return l_Undef;
     }
 
+    const Tableau& getTableau() const { return tableau; }
+
 private:
     void pivot(LVRef basic, LVRef nonBasic);
     LVRef getBasicVarToFixByBland() const;
