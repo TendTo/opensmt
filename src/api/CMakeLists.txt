@@ -52,6 +52,12 @@ if (BUILD_SHARED_LIBS)
       )
 
     target_link_libraries(OpenSMT PUBLIC GMP::GMP Threads::Threads)
+    if(ENABLE_QSOPTEX)
+        target_link_libraries(OpenSMT PUBLIC Qsoptex::qsoptex)
+    endif()
+    if(ENABLE_QSOPTEX)
+        target_link_libraries(OpenSMT PUBLIC libsoplex)
+    endif()
     install(TARGETS OpenSMT EXPORT OpenSMTTargets
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
@@ -95,6 +101,12 @@ if (BUILD_STATIC_LIBS)
     )
 
     target_link_libraries(OpenSMT-static PUBLIC GMP::GMP Threads::Threads)
+    if(ENABLE_QSOPTEX)
+        target_link_libraries(OpenSMT-static PUBLIC Qsoptex::qsoptex)
+    endif()
+    if(ENABLE_QSOPTEX)
+        target_link_libraries(OpenSMT-static PUBLIC libsoplex)
+    endif()
     install(TARGETS OpenSMT-static ARCHIVE DESTINATION lib)
 endif()
 
