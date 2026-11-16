@@ -99,6 +99,9 @@ public:
             assert(false);
     }
     ~StopWatch() {
+        stop();
+    }
+    void stop() {
         if (getrusage(RUSAGE_SELF, &tmp_rusage) == 0) {
             timer += TimeVal(tmp_rusage) - time_start;
         } else

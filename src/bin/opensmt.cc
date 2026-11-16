@@ -24,6 +24,9 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 *********************************************************************/
 
+#ifdef STATISTICS
+#include "common/SystemQueries.h"
+#endif
 
 #include <api/Interpret.h>
 
@@ -90,6 +93,7 @@ int main( int argc, char * argv[] )
   // Accepts file from stdin if nothing specified
     FILE * fin = NULL;
 
+    double initTime = cpuTime();
     SMTConfig c = parseCMDLineArgs(argc,argv);
     Interpret interpreter(c);
 
@@ -126,6 +130,13 @@ int main( int argc, char * argv[] )
         }
         fclose( fin );
     }
+
+#ifdef STATISTICS
+    std::cerr << "; -------------------------" << std::endl;
+    std::cerr << "; GLOBAL SMT STATISTICS    " << std::endl;
+    std::cerr << "; -------------------------" << std::endl;
+    std::cerr << "; Total time...............: " << cpuTime() - initTime << std::endl;
+#endif
 
     int const exit_status = interpreter.okStatus() ? 0 : 1;
 

@@ -158,7 +158,7 @@ lbool SimpSMTSolver::solve_(bool do_simp, bool turn_off_simp)
     }
 
 #ifdef STATISTICS
-    CoreSMTSolver::preproc_time = cpuTime( );
+    preproc_time = cpuTime( );
 #endif
 
     if (result == l_True)

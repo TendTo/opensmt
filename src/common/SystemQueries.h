@@ -10,11 +10,11 @@
 #ifndef SYSTEMQUERIES_H
 #define SYSTEMQUERIES_H
 
-
-#include <sys/time.h>
-#include <sys/resource.h>
-#include <unistd.h>
+#include <cstdint>
 #include <cstdio>
+#include <sys/resource.h>
+#include <sys/time.h>
+#include <unistd.h>
 
 namespace opensmt {
 

@@ -30,10 +30,12 @@ class PartitionManager;
 struct LASolverStats {
     int num_vars;
     TimeVal timer;
+    StopWatch watch;
 
-    LASolverStats() : num_vars(0) {}
+    LASolverStats() : num_vars(0), watch(timer) {}
 
     void printStatistics(std::ostream & os) {
+        watch.stop();
         os << "; Number of LA vars........: " << num_vars << '\n';
         os << "; LA time..................: " << timer.getTime() << " s\n";
     }
