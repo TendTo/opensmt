@@ -33,6 +33,7 @@ struct ExternalLpSolverStats {
     std::unordered_map<int, int> iterative_refinements{};
 
     void printStatistics(std::ostream & os) const {
+        if (calls <= 0) return;
         os << "; -------------------------" << '\n';
         os << "; STATISTICS FOR EXT. SPX. " << '\n';
         os << "; -------------------------" << '\n';
@@ -63,6 +64,8 @@ struct ExternalLpSolverStats {
         os << "}\n";
         os << "; -------------------------" << '\n';
     }
+
+    ~ExternalLpSolverStats() { printStatistics(std::cerr); }
 };
 
 enum LinResult {
@@ -94,17 +97,17 @@ struct Solution {
 
 class ExternalLpSolver {
 public:
+    static ExternalLpSolverStats stats;
     static std::unique_ptr<ExternalLpSolver> get_external_lp_solver(SMTConfig const & config);
 
-    explicit ExternalLpSolver(SMTConfig const & config) : config(config), stats() {}
-    virtual ~ExternalLpSolver();
+    explicit ExternalLpSolver(SMTConfig const & config) : config(config) {}
+    virtual ~ExternalLpSolver() = default;
 
     virtual void init() = 0;
     virtual Solution solve() = 0;
 
 protected:
     SMTConfig const & config;
-    ExternalLpSolverStats stats;
 
     std::vector<LVRef> rowToArithVar;
     std::vector<LVRef> colToArithVar;

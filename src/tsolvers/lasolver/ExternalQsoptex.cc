@@ -65,7 +65,7 @@ rat_class::operator FastRational() const {
                            : FastRational{rat_get_num(rat), rat_get_den(rat)};
 }
 
-ExternalQsoptex::ExternalQsoptex(SMTConfig const & config) : ExternalLpSolver(config) {
+ExternalQsoptex::ExternalQsoptex(SMTConfig const & config) : ExternalLpSolver(config), d_status(), d_basis{0} {
     QSXStart();
     d_qsx = rat_QScreate_prob(nullptr, QS_MIN);
 

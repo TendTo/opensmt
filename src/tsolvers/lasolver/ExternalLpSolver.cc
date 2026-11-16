@@ -5,6 +5,9 @@
 #include <iostream>
 
 namespace opensmt::externallp {
+
+ExternalLpSolverStats ExternalLpSolver::stats;
+
 std::unique_ptr<ExternalLpSolver> ExternalLpSolver::get_external_lp_solver(SMTConfig const & config) {
     switch (config.external_lp_solver()) {
         case opensmt::ExternalLpSolver::qsoptex:
@@ -14,10 +17,5 @@ std::unique_ptr<ExternalLpSolver> ExternalLpSolver::get_external_lp_solver(SMTCo
         default:
             throw std::runtime_error("Unknown lp solver");
     }
-}
-ExternalLpSolver::~ExternalLpSolver() {
-#ifdef STATISTICS
-    stats.printStatistics(std::cerr);
-#endif // STATISTICS
 }
 } // namespace opensmt::externallp
