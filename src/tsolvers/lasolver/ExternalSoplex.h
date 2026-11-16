@@ -8,18 +8,27 @@
 namespace opensmt::externallp {
 
 class ExternalSoplex : public ExternalLpSolver {
-    using ExternalLpSolver::ExternalLpSolver;
+public:
+    explicit ExternalSoplex(SMTConfig const & config);
+    ~ExternalSoplex() override = default;
 
-    void init() override {}
-    Solution solve() override { throw std::runtime_error("ExternalSoplex::solve() not implemented"); }
+    Solution solve() override { return {}; }
 };
 
-class ExternalSoplexEpsilon : public ExternalSoplex {
+class ExternalSoplexEpsilon final : public ExternalSoplex {
+public:
     using ExternalSoplex::ExternalSoplex;
+
+protected:
+    void initImpl(Simplex const & simplex) override {}
 };
 
-class ExternalSoplexStrict : public ExternalSoplex {
+class ExternalSoplexStrict final : public ExternalSoplex {
+public:
     using ExternalSoplex::ExternalSoplex;
+
+protected:
+    void initImpl(Simplex const & simplex) override {}
 };
 
 } // namespace opensmt::externallp

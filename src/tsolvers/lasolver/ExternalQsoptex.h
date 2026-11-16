@@ -24,6 +24,8 @@ public:
     explicit rat_class(std::int64_t const val) : rat_class() { *this = val; }
     explicit rat_class(double const val) : rat_class() { *this = val; }
     ~rat_class() { rat_clear(rat); }
+    void setInfinity();
+    void setNInfinity();
 
     rat_class(rat_class const & o);
     rat_class(rat_class && o) noexcept;
@@ -37,6 +39,10 @@ public:
 
     [[nodiscard]] int sgn() const { return rat_sgn(rat); }
     [[nodiscard]] rat_t const & data() const { return rat; }
+    rat_t & operator*() { return rat; }
+    rat_class operator+(rat_class const & o) const;
+    rat_class operator-(rat_class const & o) const;
+    rat_class operator-() const;
 
     operator FastRational() const;
 
@@ -46,14 +52,17 @@ private:
 
 class ExternalQsoptex : public ExternalLpSolver {
 public:
-    explicit ExternalQsoptex(SMTConfig const & config);
     using VarStatus = char;
     using SolverStatus = int;
+
+    explicit ExternalQsoptex(SMTConfig const & config);
     ~ExternalQsoptex() override;
 
+    Solution solve() override;
+
 protected:
-    int numCols() const { return rat_QSget_colcount(d_qsx); }
-    int numRows() const { return rat_QSget_rowcount(d_qsx); }
+    [[nodiscard]] int numCols() const { return rat_QSget_colcount(d_qsx); }
+    [[nodiscard]] int numRows() const { return rat_QSget_rowcount(d_qsx); }
 #if 0
 
     mpq_class const & varToLb(ArithVar v) const;
@@ -94,6 +103,7 @@ protected:
     std::vector<rat_class> d_range;
     std::vector<char> d_sense;
     std::vector<rat_class> d_x;
+    std::vector<rat_class> d_y;
     QSbasis d_basis;
 
 public:
@@ -104,14 +114,10 @@ public:
 
 protected:
     template<VariableType VarType>
-    Solution extractVarValue(int idx);
-
-    virtual bool isStrictVarZero() const = 0;
+    void extractVarValue(int idx, Solution & sol);
+    [[nodiscard]] virtual bool isStrictVarZero() const = 0;
 
 public:
-    void init() override {}
-    Solution solve() override { throw std::runtime_error("ExternalQsoptex::solve() not implemented"); }
-
 protected:
     bool d_solvedRelaxation;
     bool d_solvedMIP;
@@ -120,6 +126,7 @@ protected:
 class ExternalQsoptexEpsilon : public ExternalQsoptex {
 public:
     using ExternalQsoptex::ExternalQsoptex;
+    void initImpl(Simplex const & simplex);
 
 private:
     /** UTILITIES FOR DEALING WITH ESTIMATES */
@@ -129,9 +136,10 @@ private:
     bool isStrictVarZero() const override { return false; }
 };
 
-class ExternalQsoptexStrict : public ExternalQsoptex {
+class ExternalQsoptexStrict final : public ExternalQsoptex {
 public:
     using ExternalQsoptex::ExternalQsoptex;
+    void initImpl(Simplex const & simplex) {}
 
 private:
     std::vector<LVRef> d_strictVars;

@@ -7,6 +7,7 @@ std::unique_ptr<ExternalLpSolver> make_external_soplex(SMTConfig const & config)
     if (config.epsilon_mode()) return std::make_unique<ExternalSoplexEpsilon>(config);
     return std::make_unique<ExternalSoplexStrict>(config);
 }
+ExternalSoplex::ExternalSoplex(SMTConfig const & config) : ExternalLpSolver(config) {}
 } // namespace opensmt::externallp
 
 #else

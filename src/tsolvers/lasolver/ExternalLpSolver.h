@@ -2,6 +2,7 @@
 #define EXTERNAL_SIMPLEX_H
 
 #include "LARefs.h"
+#include "Simplex.h"
 #include "options/SMTConfig.h"
 
 #include <memory>
@@ -68,12 +69,14 @@ struct ExternalLpSolverStats {
     ~ExternalLpSolverStats() { printStatistics(std::cerr); }
 };
 
-enum LinResult {
+enum class LinResult {
     LinUnknown,    /* Unknown error */
     LinFeasible,   /* Relaxation is feasible */
     LinInfeasible, /* Relaxation is infeasible/all integer branches closed */
     LinExhausted
 };
+
+enum class VarBoundState { VAR_BOUND_AT_LOWER, VAR_BOUND_AT_UPPER };
 
 /**
  * Store a solution obtained from the external simplex solver.
@@ -88,29 +91,36 @@ enum LinResult {
  * simplex solver.
  */
 struct Solution {
-    std::vector<LVRef> newBasis;
-    std::vector<LVRef> newNonBasis;
-    std::vector<std::pair<LVRef, double>> newValues;
+    std::unordered_set<LVRef> newBasis;
+    std::unordered_set<LVRef> newNonBasis;
+    std::unordered_map<LVRef, Delta> newValues;
+    std::unordered_map<LVRef, VarBoundState> newBounds;
     LinResult linResult;
-    Solution() : newBasis(), newNonBasis(), newValues(), linResult(LinUnknown) {}
+    Solution() : newBasis(), newNonBasis(), newValues(), newBounds(), linResult(LinResult::LinUnknown) {}
 };
 
 class ExternalLpSolver {
 public:
+    static constexpr std::int32_t epsilon_num = 1;
+    static constexpr std::uint32_t epsilon_den = 1000000000;
     static ExternalLpSolverStats stats;
     static std::unique_ptr<ExternalLpSolver> get_external_lp_solver(SMTConfig const & config);
 
-    explicit ExternalLpSolver(SMTConfig const & config) : config(config) {}
+    explicit ExternalLpSolver(SMTConfig const & config);
     virtual ~ExternalLpSolver() = default;
 
-    virtual void init() = 0;
+    void init(Simplex const & simplex);
     virtual Solution solve() = 0;
 
 protected:
+    virtual void initImpl(Simplex const & simplex) = 0;
     SMTConfig const & config;
 
-    std::vector<LVRef> rowToArithVar;
-    std::vector<LVRef> colToArithVar;
+    std::vector<LVRef> row_to_var;
+    std::vector<LVRef> col_to_var;
+    std::vector<int> var_to_col;
+    // std::vector<int> var_to_row;
+    std::size_t nnz;
 };
 
 } // namespace opensmt::externallp
