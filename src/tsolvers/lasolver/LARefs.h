@@ -53,4 +53,9 @@ struct LVRefComp {
 
 }
 
+template <>
+struct std::hash<opensmt::LVRef>  {
+    std::size_t operator() (opensmt::LVRef const & s) const noexcept { return s.x; }
+};
+
 #endif
