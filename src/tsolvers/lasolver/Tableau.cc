@@ -85,6 +85,13 @@ std::vector<LVRef> Tableau::getNonBasicVars() const {
     return res;
 }
 
+std::size_t Tableau::numActiveRows() const {
+    return std::ranges::count_if(rows, [](auto const & row) { return row.get(); });
+}
+std::size_t Tableau::numActiveColumns() const {
+    return std::ranges::count_if(varTypes, [](VarType const type) { return type != VarType::NONE; });
+}
+
 void Tableau::addRow(LVRef v, std::unique_ptr<Polynomial> p) {
     assert(!rows[v.x]);
     rows[v.x] = std::move(p);

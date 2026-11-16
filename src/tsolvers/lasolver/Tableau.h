@@ -88,6 +88,9 @@ public:
     bool checkConsistency() const;
     std::vector<LVRef> getNonBasicVars() const;
 
+    std::size_t numActiveRows() const;
+    std::size_t numActiveColumns() const;
+
 protected:
     // using vars_t = std::unordered_set<LVRef, LVRefHash>;
     using vars_t = std::set<LVRef, LVRefComp>;
