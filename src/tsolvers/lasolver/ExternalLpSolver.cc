@@ -8,19 +8,21 @@ namespace opensmt::externallp {
 
 ExternalLpSolverStats ExternalLpSolver::stats;
 
-std::unique_ptr<ExternalLpSolver> ExternalLpSolver::get_external_lp_solver(SMTConfig const & config) {
+std::unique_ptr<ExternalLpSolver> ExternalLpSolver::get_external_lp_solver(Simplex const & simplex,
+                                                                           SMTConfig const & config) {
     switch (config.external_lp_solver()) {
         case opensmt::ExternalLpSolver::qsoptex:
-            return make_external_qsoptex(config);
+            return make_external_qsoptex(simplex, config);
         case opensmt::ExternalLpSolver::soplex:
-            return make_external_soplex(config);
+            return make_external_soplex(simplex, config);
         default:
             throw std::runtime_error("Unknown lp solver");
     }
 }
-ExternalLpSolver::ExternalLpSolver(SMTConfig const & config) : config(config), nnz(0) {}
-
-void ExternalLpSolver::init(Simplex const & simplex) {
+ExternalLpSolver::ExternalLpSolver(Simplex const & simplex, SMTConfig const & config)
+    : simplex(simplex),
+      config(config),
+      nnz(0) {
     Tableau const & tableau = simplex.getTableau();
     if (tableau.getNumOfCols() == 0 or tableau.getRows().empty()) return;
 
@@ -40,15 +42,12 @@ void ExternalLpSolver::init(Simplex const & simplex) {
         }
     }
 
-    initImpl(simplex);
-
-#if 0 && !defined(NDEBUG)
+#if 1 && !defined(NDEBUG)
     tableau.print();
-    std::cout << "Printing rows" << std::endl;
-    for (auto const & row : tableau.getRows()) {
-        if (row) row->print();
-        if (row) row->size();
-    }
+    // std::cout << "Printing rows" << std::endl;
+    // for (auto const & row : tableau.getRows()) {
+    //     if (row) row->print();
+    // }
     std::cout << "Printing cols" << std::endl;
     for (std::uint32_t i = 0; i < tableau.getNumOfCols(); ++i) {
         if (simplex.hasLBound(LVRef{.x = i})) {

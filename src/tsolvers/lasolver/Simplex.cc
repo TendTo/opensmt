@@ -44,7 +44,9 @@ Simplex::Explanation Simplex::checkSimplex() {
     // keep doing pivotAndUpdate until the SAT/UNSAT status is confirmed
     while (true) {
         if (config.pivot_threshold() >= 0 && repeats >= config.pivot_threshold()) {
-            auto external_simplex = externallp::ExternalLpSolver::get_external_lp_solver(config);
+            std::unique_ptr<externallp::ExternalLpSolver> const external_simplex =
+                externallp::ExternalLpSolver::get_external_lp_solver(*this, config);
+            externallp::Solution sol = external_simplex->solve();
         }
 
         repeats++;

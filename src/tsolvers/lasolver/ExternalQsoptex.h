@@ -26,6 +26,8 @@ public:
     ~rat_class() { rat_clear(rat); }
     void setInfinity();
     void setNInfinity();
+    [[nodiscard]] bool isZero() const;
+    [[nodiscard]] bool isNonZero() const;
 
     rat_class(rat_class const & o);
     rat_class(rat_class && o) noexcept;
@@ -45,6 +47,7 @@ public:
     rat_class operator-() const;
 
     operator FastRational() const;
+    operator double() const;
 
 private:
     rat_t rat;
@@ -60,10 +63,11 @@ public:
     using VarStatus = char;
     using SolverStatus = int;
 
-    explicit ExternalQsoptex(SMTConfig const & config);
+    explicit ExternalQsoptex(Simplex const & simplex, SMTConfig const & config);
     ~ExternalQsoptex() override;
 
     Solution solve() override;
+    virtual void solveImpl() = 0;
 
 protected:
     [[nodiscard]] int numCols() const { return rat_QSget_colcount(d_qsx); }
@@ -119,7 +123,7 @@ public:
 
 protected:
     template<VariableType VarType>
-    void extractVarValue(int idx, Solution & sol);
+    void extractVarValue(int idx, Solution & sol) const;
     [[nodiscard]] virtual bool isStrictVarZero() const = 0;
 
 public:
@@ -128,26 +132,34 @@ protected:
     bool d_solvedMIP;
 };
 
-class ExternalQsoptexEpsilon : public ExternalQsoptex {
+class ExternalQsoptexEpsilon final : public ExternalQsoptex {
 public:
-    using ExternalQsoptex::ExternalQsoptex;
-    void initImpl(Simplex const & simplex);
+    ExternalQsoptexEpsilon(Simplex const & simplex, SMTConfig const & config);
+
+protected:
+    void solveImpl() override;
 
 private:
     /** UTILITIES FOR DEALING WITH ESTIMATES */
 
     static constexpr double SMALL_FIXED_EPSILON = .000000001;
 
+    [[nodiscard]] Solution extractSolution() override;
+
     bool isStrictVarZero() const override { return false; }
 };
 
 class ExternalQsoptexStrict final : public ExternalQsoptex {
 public:
-    using ExternalQsoptex::ExternalQsoptex;
-    void initImpl(Simplex const & simplex) {}
+    ExternalQsoptexStrict(Simplex const & simplex, SMTConfig const & config);
+
+protected:
+    void solveImpl() override;
 
 private:
     std::vector<LVRef> d_strictVars;
+
+    [[nodiscard]] Solution extractSolution() override;
 
     bool isStrictVarZero() const override {
         if (!d_x.empty()) return d_x[numCols() - 1].sgn() == 0;
@@ -159,7 +171,7 @@ private:
 #endif
 
 namespace opensmt::externallp {
-std::unique_ptr<ExternalLpSolver> make_external_qsoptex(SMTConfig const & config);
+std::unique_ptr<ExternalLpSolver> make_external_qsoptex(Simplex const & simplex, SMTConfig const & config);
 }
 
 #endif

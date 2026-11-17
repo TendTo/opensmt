@@ -104,16 +104,19 @@ public:
     static constexpr std::int32_t epsilon_num = 1;
     static constexpr std::uint32_t epsilon_den = 1000000000;
     static ExternalLpSolverStats stats;
-    static std::unique_ptr<ExternalLpSolver> get_external_lp_solver(SMTConfig const & config);
+    static std::unique_ptr<ExternalLpSolver> get_external_lp_solver(Simplex const & simplex, SMTConfig const & config);
 
-    explicit ExternalLpSolver(SMTConfig const & config);
+    explicit ExternalLpSolver(Simplex const & simplex, SMTConfig const & config);
     virtual ~ExternalLpSolver() = default;
 
-    void init(Simplex const & simplex);
+    [[nodiscard]] bool hasEitherBound(LVRef const v) const { return simplex.hasLBound(v) || simplex.hasUBound(v); }
+
     virtual Solution solve() = 0;
 
 protected:
-    virtual void initImpl(Simplex const & simplex) = 0;
+    virtual Solution extractSolution() = 0;
+
+    Simplex const & simplex;
     SMTConfig const & config;
 
     std::vector<LVRef> row_to_var;

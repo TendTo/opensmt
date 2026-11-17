@@ -104,6 +104,10 @@ rat_class::operator FastRational() const {
     return rat_is_gmp(rat) ? FastRational(static_cast<mpq_class>(rat_get_mpq(rat)))
                            : FastRational{rat_get_num(rat), rat_get_den(rat)};
 }
+rat_class::operator double() const {
+    return rat_to_d(rat);
+}
+
 void rat_class::setInfinity() {
     rat_set_infinity(rat);
 }
@@ -145,6 +149,9 @@ ExternalQsoptex::ExternalQsoptex(Simplex const & simplex, SMTConfig const & conf
 
     rat_QSset_param(d_qsx, QS_PARAM_SIMPLEX_MAX_ITERATIONS, pivot_threshold);
     rat_QSset_param(d_qsx, QS_PARAM_SIMPLEX_DISPLAY, config.verbosity());
+
+    d_y.resize(row_to_var.size());
+    d_x.resize(col_to_var.size() + 1); // Leave space for the strict-var
 }
 
 ExternalQsoptex::~ExternalQsoptex() {
@@ -170,10 +177,100 @@ Solution ExternalQsoptex::solve() {
     rat_QSwrite_prob(d_qsx, filename, "LP");
     i++;
 #endif
-    return {};
+
+    solveImpl();
+    return extractSolution();
 }
 
-void ExternalQsoptexEpsilon::initImpl(Simplex const & simplex) {
+template<ExternalQsoptex::VariableType VarType>
+void ExternalQsoptex::extractVarValue(int const idx, Solution & sol) const {
+    auto & newBasis = sol.newBasis;
+    auto & newNonBasis = sol.newNonBasis;
+    auto & newValues = sol.newValues;
+    auto & newBounds = sol.newBounds;
+
+    LVRef v = LVRef::Undef;
+    VarStatus varStatus = 'x';
+
+    if constexpr (VarType == VariableType::COL) {
+        v = col_to_var.at(idx);
+        varStatus = d_basis.cstat[idx];
+    }
+    if constexpr (VarType == VariableType::ROW) {
+        v = row_to_var.at(idx);
+        varStatus = d_basis.rstat[idx];
+    }
+    assert(v != LVRef::Undef);
+    assert(varStatus != 'x');
+
+    if (varStatus == QS_COL_BSTAT_BASIC)
+        newBasis.insert(v);
+    else if (varStatus != QS_COL_BSTAT_BASIC)
+        newNonBasis.insert(v);
+
+    rat_class const * value = nullptr;
+    rat_class rhs;
+    switch (varStatus) {
+        // If we are dealing with a basic variable, we necessarily need to get its
+        // value from the solved problem.
+        case QS_COL_BSTAT_BASIC:
+        case QS_COL_BSTAT_FREE: // Shared with basic
+            if constexpr (VarType == VariableType::ROW) {
+                rhs = d_rhs[idx] + (d_sense[idx] == 'L' ? -d_y[idx] : d_y[idx]);
+                value = &rhs;
+            } else if constexpr (VarType == VariableType::COL) {
+                value = &d_x[idx];
+            }
+            assert(value != nullptr);
+            if (simplex.hasLBound(v) && simplex.Lb(v).R() >= *value) {
+                newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_LOWER);
+            } else if (simplex.hasUBound(v) && simplex.Ub(v).R() <= *value) {
+                newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_UPPER);
+            } else {
+                newValues.emplace(v, Delta(*value));
+            }
+            break;
+        // For non-basic variables we know the value is at a bound
+        // and we can use the d_vars/proper LP bounds directly
+        case QS_COL_BSTAT_LOWER:
+            // Free rows are set to lower bound, handle them accordingly
+            if (!hasEitherBound(v)) {
+                if (VarType == VariableType::ROW) {
+                    rhs = d_rhs[idx] + (d_sense[idx] == 'G' ? d_y[idx] : -d_y[idx]);
+                    value = &rhs;
+                } else if (VarType == VariableType::COL) {
+                    value = &d_x[idx];
+                }
+                assert(value != nullptr);
+                newValues.emplace(v, Delta(*value));
+            } else if constexpr (VarType == VariableType::ROW) {
+                if (d_sense[idx] == 'G' || d_sense[idx] == 'R') {
+                    assert(simplex.hasLBound(v));
+                    newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_LOWER);
+                } else if (d_sense[idx] == 'L') {
+                    assert(simplex.hasUBound(v));
+                    newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_UPPER);
+                } else {
+                    assert(false);
+                }
+            } else if constexpr (VarType == VariableType::COL) {
+                assert(simplex.hasLBound(v));
+                newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_LOWER);
+            } else {
+                assert(false);
+            }
+            break;
+        case QS_COL_BSTAT_UPPER:
+            assert(simplex.hasUBound(v));
+            newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_UPPER);
+            break;
+        default:
+            assert(false);
+    }
+}
+
+ExternalQsoptexEpsilon::ExternalQsoptexEpsilon(Simplex const & simplex, SMTConfig const & config)
+    : ExternalQsoptex(simplex, config) {
     Tableau const & tableau = simplex.getTableau();
 
     std::vector<int> numNonZeroPerRow;
@@ -239,16 +336,139 @@ void ExternalQsoptexEpsilon::initImpl(Simplex const & simplex) {
         }
     }
 
+#if 1 && !defined(NDEBUG)
+    std::cout << numNonZeroPerRow << std::endl;
+    std::cout << beginRowIdx << std::endl;
+    std::cout << colIdxs << std::endl;
+    std::cout << values << std::endl;
+    std::cout << d_rhs << std::endl;
+    std::cout << d_sense << std::endl;
+    std::cout << d_range << std::endl;
+#endif
+
     static_assert(sizeof(rat_class) == sizeof(rat_t), "mpq_class layout assumption broken");
     rat_QSadd_ranged_rows(d_qsx, static_cast<int>(numNonZeroPerRow.size()), numNonZeroPerRow.data(), beginRowIdx.data(),
                           colIdxs.data(), reinterpret_cast<rat_t const *>(values.data()),
                           reinterpret_cast<rat_t const *>(d_rhs.data()), d_sense.data(),
                           reinterpret_cast<rat_t const *>(d_range.data()), nullptr);
 }
+void ExternalQsoptexEpsilon::solveImpl() {
+    unsigned int precision = 0;
 
-std::unique_ptr<ExternalLpSolver> make_external_qsoptex(SMTConfig const & config) {
-    if (config.epsilon_mode()) return std::make_unique<ExternalQsoptexEpsilon>(config);
-    return std::make_unique<ExternalQsoptexStrict>(config);
+    rat_class delta{config.delta()};
+    [[maybe_unused]] int const res =
+        QSdelta_solver_rat(d_qsx, *delta, reinterpret_cast<rat_t *>(d_x.data()), reinterpret_cast<rat_t *>(d_y.data()),
+                           &d_basis, &precision, PRIMAL_SIMPLEX, &d_status, nullptr, nullptr);
+    assert(res == 0);
+
+    // Update the statistics
+    stats.precisions[precision]++;
+    if (delta.isNonZero()) { stats.max_delta = std::max(stats.max_delta, static_cast<double>(delta)); }
+}
+Solution ExternalQsoptexEpsilon::extractSolution() {
+    assert(d_solvedRelaxation);
+    Solution sol;
+    sol.newBasis.reserve(numRows());
+    sol.newNonBasis.reserve(numCols());
+    sol.newValues.reserve(numCols() + numRows());
+    sol.newBounds.reserve(numCols() + numRows());
+
+    if (d_status == QS_LP_OPTIMAL || d_status == QS_LP_DELTA_OPTIMAL || d_status == QS_LP_FEASIBLE ||
+        d_status == QS_LP_DELTA_FEASIBLE || d_status == QS_LP_UNBOUNDED || d_status == QS_LP_INFEASIBLE) {
+        for (int colIdx = 0; colIdx < numCols(); colIdx++) {
+            extractVarValue<VariableType::COL>(colIdx, sol);
+        }
+
+        for (int rowIdx = 0; rowIdx < numRows(); rowIdx++) {
+            extractVarValue<VariableType::ROW>(rowIdx, sol);
+        }
+    } else {
+        // Unknown return status
+        assert(false);
+    }
+    return sol;
+}
+ExternalQsoptexStrict::ExternalQsoptexStrict(Simplex const & simplex, SMTConfig const & config)
+    : ExternalQsoptex(simplex, config) {}
+
+void ExternalQsoptexStrict::solveImpl() {
+    unsigned int precision = 0;
+
+    rat_class delta{config.delta()};
+    rat_class obj_lb, obj_ub;
+    [[maybe_unused]] int const res = QSdelta_full_solver_rat(
+        d_qsx, *delta, reinterpret_cast<rat_t *>(d_x.data()), reinterpret_cast<rat_t *>(d_y.data()), *obj_lb, *obj_ub,
+        &d_basis, PRIMAL_SIMPLEX, &d_status, &precision, nullptr, nullptr);
+    assert(res == 0);
+
+    // Update the statistics
+    stats.precisions[precision]++;
+    if (delta.isNonZero()) { stats.max_delta = std::max(stats.max_delta, static_cast<double>(delta)); }
+}
+Solution ExternalQsoptexStrict::extractSolution() {
+    assert(d_solvedRelaxation);
+    Solution sol;
+    sol.newBasis.reserve(numRows());
+    sol.newNonBasis.reserve(numCols());
+    sol.newValues.reserve(numCols() + numRows());
+    sol.newBounds.reserve(numCols() + numRows());
+
+    assert(d_solvedRelaxation);
+    bool isStrictBasic = d_basis.cstat[numCols() - 1] == QS_COL_BSTAT_BASIC;
+
+#ifndef NDEBUG
+    std::cout << "Strict var value: " << d_x[numCols() - 1] << std::endl;
+#endif
+
+    if (isStrictBasic && d_x[numCols() - 1].isNonZero()) {
+        int res = rat_QSchange_bound(d_qsx, numCols() - 1, 'U', rat_zeroLpNum);
+        assert(res == 0);
+        rat_class delta{config.delta() >= 0 ? config.delta() : 0.0};
+        rat_class obj_lb, obj_ub;
+        res = QSdelta_full_solver_rat(d_qsx, *delta, reinterpret_cast<rat_t *>(d_x.data()),
+                                      reinterpret_cast<rat_t *>(d_y.data()), *obj_lb, *obj_ub, &d_basis, PRIMAL_SIMPLEX,
+                                      &d_status, nullptr, nullptr, nullptr);
+        assert(res == 0);
+        assert(d_status == QS_LP_OPTIMAL || d_status == QS_LP_DELTA_OPTIMAL || d_status == QS_LP_FEASIBLE ||
+               d_status == QS_LP_DELTA_FEASIBLE);
+        isStrictBasic = d_basis.cstat[numCols() - 1] == QS_COL_BSTAT_BASIC;
+    }
+
+    // By this point, either the strict variable is basic and at 0,
+    // or it is non-basic and we don't care about its value
+    assert(!isStrictBasic || d_x[numCols() - 1].isZero());
+
+    if (d_status == QS_LP_OPTIMAL || d_status == QS_LP_DELTA_OPTIMAL || d_status == QS_LP_FEASIBLE ||
+        d_status == QS_LP_DELTA_FEASIBLE || d_status == QS_LP_UNBOUNDED || d_status == QS_LP_INFEASIBLE) {
+        for (int colIdx = 0; colIdx < static_cast<int>(col_to_var.size()); colIdx++) {
+            // This way, we skip the strict-var, since it is not included in col_to_var
+            extractVarValue<VariableType::COL>(colIdx, sol);
+        }
+
+        for (int rowIdx = 0; rowIdx < numRows(); rowIdx++) {
+            LVRef const v = row_to_var[rowIdx];
+            // We already encountered the nonbasic version of this row, we can skip it
+            if (sol.newNonBasis.contains(v)) continue;
+            extractVarValue<VariableType::ROW>(rowIdx, sol);
+        }
+    } else { // Unknown status code
+        assert(false);
+    }
+
+    // Since we have to split range rows, we have to remove those that we
+    // erroneously marked as basic and then discovered to be nonbasic
+    for (LVRef const v : sol.newNonBasis) {
+        sol.newBasis.erase(v);
+    }
+    // If the strict variable is basic, we need to add some other non-basic
+    // variable to the basis to maintain the same number of basic variables
+
+    return sol;
+}
+
+std::unique_ptr<ExternalLpSolver> make_external_qsoptex(Simplex const & simplex, SMTConfig const & config) {
+    if (config.epsilon_mode()) return std::make_unique<ExternalQsoptexEpsilon>(simplex, config);
+    return std::make_unique<ExternalQsoptexStrict>(simplex, config);
 }
 
 } // namespace opensmt::externallp
@@ -256,7 +476,7 @@ std::unique_ptr<ExternalLpSolver> make_external_qsoptex(SMTConfig const & config
 #else
 
 namespace opensmt::externallp {
-std::unique_ptr<ExternalLpSolver> make_external_qsoptex(SMTConfig const &) {
+std::unique_ptr<ExternalLpSolver> make_external_qsoptex(Simplex const &, SMTConfig const &) {
     throw std::runtime_error("opensmt was not build with support for the qsoptex lp solver");
 }
 } // namespace opensmt::externallp

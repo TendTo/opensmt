@@ -9,7 +9,7 @@ namespace opensmt::externallp {
 
 class ExternalSoplex : public ExternalLpSolver {
 public:
-    explicit ExternalSoplex(SMTConfig const & config);
+    explicit ExternalSoplex(Simplex const & simplex, SMTConfig const & config);
     ~ExternalSoplex() override = default;
 
     Solution solve() override { return {}; }
@@ -17,18 +17,18 @@ public:
 
 class ExternalSoplexEpsilon final : public ExternalSoplex {
 public:
-    using ExternalSoplex::ExternalSoplex;
+    ExternalSoplexEpsilon(Simplex const & simplex, SMTConfig const & config);
 
 protected:
-    void initImpl(Simplex const & simplex) override {}
+    Solution extractSolution() override { return {}; }
 };
 
 class ExternalSoplexStrict final : public ExternalSoplex {
 public:
-    using ExternalSoplex::ExternalSoplex;
+    ExternalSoplexStrict(Simplex const & simplex, SMTConfig const & config);
 
 protected:
-    void initImpl(Simplex const & simplex) override {}
+    Solution extractSolution() override { return {}; }
 };
 
 } // namespace opensmt::externallp
@@ -36,7 +36,7 @@ protected:
 #endif
 
 namespace opensmt::externallp {
-std::unique_ptr<ExternalLpSolver> make_external_soplex(SMTConfig const & config);
+std::unique_ptr<ExternalLpSolver> make_external_soplex(Simplex const & simplex, SMTConfig const & config);
 }
 
 #endif
