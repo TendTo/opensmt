@@ -30,7 +30,7 @@ struct ExternalLpSolverStats {
     int lp_solver{0};
     int lp_setup_time{0};
     int lp_run_time{0};
-    std::unordered_map<int, int> precisions{};
+    std::unordered_map<unsigned int, int> precisions{};
     std::unordered_map<int, int> iterative_refinements{};
 
     void printStatistics(std::ostream & os) const {
@@ -122,6 +122,17 @@ protected:
     // std::vector<int> var_to_row;
     std::size_t nnz;
 };
+
+#ifndef NDEBUG
+
+std::ostream & operator<<(std::ostream & os, Solution const & sol);
+std::ostream & operator<<(std::ostream & os, std::unordered_set<LVRef> const & set);
+std::ostream & operator<<(std::ostream & os, std::unordered_map<LVRef, Delta> const & map);
+std::ostream & operator<<(std::ostream & os, std::unordered_map<LVRef, VarBoundState> const & map);
+std::ostream & operator<<(std::ostream & os, std::vector<int>);
+std::ostream & operator<<(std::ostream & os, std::vector<char>);
+
+#endif
 
 } // namespace opensmt::externallp
 

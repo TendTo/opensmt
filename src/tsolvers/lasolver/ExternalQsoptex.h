@@ -50,6 +50,11 @@ private:
     rat_t rat;
 };
 
+#ifndef NDEBUG
+std::ostream & operator<<(std::ostream & os, rat_class const & val);
+std::ostream & operator<<(std::ostream & os, std::vector<rat_class> const & values);
+#endif
+
 class ExternalQsoptex : public ExternalLpSolver {
 public:
     using VarStatus = char;

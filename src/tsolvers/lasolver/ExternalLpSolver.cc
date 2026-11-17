@@ -66,4 +66,81 @@ void ExternalLpSolver::init(Simplex const & simplex) {
     }
 #endif
 }
+#ifndef NDEBUG
+std::ostream & operator<<(std::ostream & os, Solution const & sol) {
+    os << "NewBounds: " << sol.newBounds << "\nNewBasis: " << sol.newBasis << "\nNewNonBasis: " << sol.newNonBasis
+       << "\nNewValues: " << sol.newValues << "\nLinResult: ";
+    switch (sol.linResult) {
+        case LinResult::LinUnknown:
+            return os << "unknown";
+        case LinResult::LinFeasible:
+            return os << "feasible";
+        case LinResult::LinInfeasible:
+            return os << "infeasible";
+        case LinResult::LinExhausted:
+            return os << "exhausted";
+        default:
+            return os;
+    }
+}
+std::ostream & operator<<(std::ostream & os, std::unordered_set<LVRef> const & set) {
+    os << '{';
+    bool first = true;
+    for (LVRef const v : set) {
+        if (!first) os << ", ";
+        os << 'v' << v.x;
+        first = false;
+    }
+    return os << '}';
+}
+std::ostream & operator<<(std::ostream & os, std::unordered_map<LVRef, Delta> const & map) {
+    os << '{';
+    bool first = true;
+    for (auto const & [v, value] : map) {
+        if (!first) os << ", ";
+        os << 'v' << v.x << ": " << value;
+        first = false;
+    }
+    return os << '}';
+}
+std::ostream & operator<<(std::ostream & os, std::unordered_map<LVRef, VarBoundState> const & map) {
+    os << '{';
+    bool first = true;
+    for (auto const & [v, bound] : map) {
+        if (!first) os << ", ";
+        os << 'v' << v.x << ": ";
+        switch (bound) {
+            case VarBoundState::VAR_BOUND_AT_LOWER:
+                os << "lower";
+                break;
+            case VarBoundState::VAR_BOUND_AT_UPPER:
+                os << "upper";
+                break;
+        }
+        first = false;
+    }
+    return os << '}';
+}
+std::ostream & operator<<(std::ostream & os, std::vector<int> values) {
+    os << '[';
+    bool first = true;
+    for (int const value : values) {
+        if (!first) os << ", ";
+        os << value;
+        first = false;
+    }
+    return os << ']';
+}
+std::ostream & operator<<(std::ostream & os, std::vector<char> values) {
+    os << '[';
+    bool first = true;
+    for (char const value : values) {
+        if (!first) os << ", ";
+        os << value;
+        first = false;
+    }
+    return os << ']';
+}
+#endif
+
 } // namespace opensmt::externallp

@@ -110,8 +110,36 @@ void rat_class::setInfinity() {
 void rat_class::setNInfinity() {
     rat_set_ninfinity(rat);
 }
+bool rat_class::isZero() const {
+    return rat_is_zero(rat);
+}
+bool rat_class::isNonZero() const {
+    return !rat_is_zero(rat);
+}
 
-ExternalQsoptex::ExternalQsoptex(SMTConfig const & config) : ExternalLpSolver(config), d_status(), d_basis{0} {
+#ifndef NDEBUG
+std::ostream & operator<<(std::ostream & os, rat_class const & val) {
+    char * const str = rat_get_str(val.data());
+    os << str;
+    free(str);
+    return os;
+}
+std::ostream & operator<<(std::ostream & os, std::vector<rat_class> const & values) {
+    os << '[';
+    bool first = true;
+    for (rat_class const & value : values) {
+        if (!first) os << ", ";
+        os << value;
+        first = false;
+    }
+    return os << ']';
+}
+#endif
+
+ExternalQsoptex::ExternalQsoptex(Simplex const & simplex, SMTConfig const & config)
+    : ExternalLpSolver(simplex, config),
+      d_status(),
+      d_basis{0} {
     QSXStart();
     d_qsx = rat_QScreate_prob(nullptr, QS_MIN);
 
