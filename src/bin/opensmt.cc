@@ -135,7 +135,7 @@ int main( int argc, char * argv[] )
     std::cerr << "; -------------------------" << std::endl;
     std::cerr << "; GLOBAL SMT STATISTICS    " << std::endl;
     std::cerr << "; -------------------------" << std::endl;
-    std::cerr << "; Total time...............: " << cpuTime() - initTime << std::endl;
+    std::cerr << "; Total time...............: " << cpuTime() - initTime << " s" << std::endl;
 #endif
 
     int const exit_status = interpreter.okStatus() ? 0 : 1;

@@ -78,7 +78,7 @@ Tableau::rows_t const & Tableau::getRows() const {
 
 std::vector<LVRef> Tableau::getNonBasicVars() const {
     std::vector<LVRef> res;
-    res.resize(varTypes.size());
+    res.reserve(varTypes.size());
     for (unsigned i = 0; i < varTypes.size(); ++i) {
         if (varTypes[i] == VarType::NONBASIC) { res.push_back(LVRef{i}); }
     }

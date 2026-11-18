@@ -4,12 +4,17 @@
 
 #include "Simplex.h"
 
-#include "ExternalQsoptex.h"
+#include "ExternalLpSolver.h"
+
+#ifdef STATISTICS
+#include "common/SystemQueries.h"
+#endif
 
 #include <common/InternalException.h>
 
 #include <algorithm>
 #include <limits>
+#include <ranges>
 
 #ifdef SIMPLEX_DEBUG
 #define simplex_assert(x) assert(x)
@@ -40,21 +45,51 @@ Simplex::Explanation Simplex::checkSimplex() {
     processBufferOfActivatedBounds();
     bool bland_rule = false;
     unsigned repeats = 0;
+    int adjustment_pivots = 0;
+    LVRef external_infeasible_candidate = LVRef::Undef;
+    externallp::LinResult external_result = externallp::LinResult::LinUnknown;
 
     // keep doing pivotAndUpdate until the SAT/UNSAT status is confirmed
     while (true) {
-        if (config.pivot_threshold() >= 0 && repeats >= config.pivot_threshold()) {
+        if (config.pivot_threshold() >= 0 && repeats >= config.pivot_threshold() &&
+            external_result == externallp::LinResult::LinUnknown) {
+#ifdef STATISTICS
+            externallp::ExternalLpSolver::stats.calls++;
+            double const init_setup_time = cpuTime();
+#endif
+            // allQasiToBasic();
             std::unique_ptr<externallp::ExternalLpSolver> const external_simplex =
                 externallp::ExternalLpSolver::get_external_lp_solver(*this, config);
+#ifdef STATISTICS
+            double const init_run_time = cpuTime();
+#endif
             externallp::Solution sol = external_simplex->solve();
+#ifdef STATISTICS
+            externallp::ExternalLpSolver::stats.lp_setup_time += cpuTime() - init_run_time;
+            externallp::ExternalLpSolver::stats.lp_run_time += init_run_time - init_setup_time;
+#if 0 && !defined(NDEBUG)
+            std::cout << "Solution! " << sol << std::endl;
+#endif
+#endif
+            externallp::ExternalLpSolver::importSolution(*this, sol);
+            external_result = sol.linResult;
+            external_infeasible_candidate = sol.infeasible_candidate;
+            if (external_result == externallp::LinResult::LinError) externallp::ExternalLpSolver::stats.other++;
+            if (external_result == externallp::LinResult::LinExhausted) externallp::ExternalLpSolver::stats.exhausted++;
         }
 
-        repeats++;
         LVRef x = LVRef::Undef;
 
-        if (!bland_rule && (repeats > tableau.getNumOfCols())) bland_rule = true;
+        if (!bland_rule && (repeats >= tableau.getNumOfCols())) bland_rule = true;
 
-        if (bland_rule) {
+        if (external_infeasible_candidate != LVRef::Undef) {
+#ifndef NDEBUG
+            std::cerr << "Using candidate x: " << x.x << std::endl;
+#endif
+            x = external_infeasible_candidate;
+            external_infeasible_candidate = LVRef::Undef;
+            assert(x != LVRef::Undef);
+        } else if (bland_rule) {
             x = getBasicVarToFixByBland();
             ++simplex_stats.num_bland_ops;
         } else {
@@ -66,6 +101,15 @@ Simplex::Explanation Simplex::checkSimplex() {
             // SAT
             refineBounds();
             model->saveAssignment();
+#ifdef STATISTICS
+            if (external_result != externallp::LinResult::LinUnknown) {
+                externallp::ExternalLpSolver::stats.adjustment_pivots_feasible += adjustment_pivots;
+                if (external_result == externallp::LinResult::LinFeasible)
+                    externallp::ExternalLpSolver::stats.feasible_correct++;
+                else
+                    externallp::ExternalLpSolver::stats.feasible_incorrect++;
+            }
+#endif
             return Explanation();
         }
 
@@ -80,11 +124,24 @@ Simplex::Explanation Simplex::checkSimplex() {
             assert(isModelOutOfBounds(x));
             bool isOutOfLowerBound = isModelOutOfLowerBound(x);
             model->restoreAssignment();
+#ifdef STATISTICS
+            if (external_result != externallp::LinResult::LinUnknown) {
+                externallp::ExternalLpSolver::stats.adjustment_pivots_infeasible += adjustment_pivots;
+                if (external_result == externallp::LinResult::LinInfeasible)
+                    externallp::ExternalLpSolver::stats.infeasible_correct++;
+                else
+                    externallp::ExternalLpSolver::stats.infeasible_incorrect++;
+            }
+#endif
             return getConflictingBounds(x, isOutOfLowerBound);
         }
         // if it was found - pivot old Basic x with non-basic y and do the model updates
         else {
             pivot(x, y_found);
+            repeats++;
+            // We already invoked the external solver, track additional pivots
+            if (external_result != externallp::LinResult::LinUnknown) adjustment_pivots++;
+            ++simplex_stats.num_tableau_pivots;
         }
     }
 }
@@ -291,6 +348,7 @@ void Simplex::pivot(LVRef const bv, LVRef const nv) {
 }
 
 void Simplex::changeValueBy(LVRef var, Delta const & diff) {
+    if (diff.R().isZero() && diff.D().isZero()) return;
     // update var's value
     model->write(var, model->read(var) + diff);
     // update all (active) rows where var is present
@@ -306,15 +364,28 @@ void Simplex::changeValueBy(LVRef var, Delta const & diff) {
         }
     }
 }
+void Simplex::changeValueTo(LVRef const var, Delta const & val) {
+    changeValueBy(var, val - model->read(var));
+}
+void Simplex::changeValueToLb(LVRef const var) {
+    assert(hasLBound(var));
+    changeValueTo(var, Lb(var));
+}
+void Simplex::changeValueToUb(LVRef const var) {
+    assert(hasUBound(var));
+    changeValueTo(var, Ub(var));
+}
 
 void Simplex::updateValues(LVRef const bv, LVRef const nv) {
-    assert(isModelOutOfBounds(bv));
+    // assert(isModelOutOfBounds(bv));
     auto const & bvNewVal = (isModelOutOfLowerBound(bv)) ? model->Lb(bv) : model->Ub(bv);
     auto const & coeff = tableau.getCoeff(bv, nv);
     // nvDiff represents how much we need to change nv, so that bv gets to the right value
     auto nvDiff = (bvNewVal - model->read(bv)) / coeff;
     // update nv's value
     changeValueBy(nv, nvDiff);
+    assert(!isModelOutOfBounds(nv));
+    assert(!isModelOutOfBounds(bv));
 }
 
 //
@@ -465,6 +536,16 @@ Real Simplex::computeDelta() const {
     return delta_abst.R() / 2;
 }
 
+// void Simplex::allQasiToBasic() {
+// #if STATISTICS
+//     simplex_stats.quasiToBasicConversions =
+//         std::ranges::count_if(std::views::iota(0u, tableau.getNumOfCols()),
+//                               [&](std::uint32_t const i) { return tableau.isQuasiBasic({.x = i}); });
+// #endif
+//     for (std::uint32_t x = 0; x < tableau.getNumOfCols(); x++) {
+//         if (LVRef const v = {.x = x}; tableau.isQuasiBasic(v)) { quasiToBasic(v); }
+//     }
+// }
 void Simplex::quasiToBasic(LVRef it) {
     tableau.quasiToBasic(it);
     // Recompute the value of the row variable

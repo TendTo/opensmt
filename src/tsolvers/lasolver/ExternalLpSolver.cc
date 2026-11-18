@@ -3,6 +3,7 @@
 #include "ExternalSoplex.h"
 
 #include <iostream>
+#include <ranges>
 
 namespace opensmt::externallp {
 
@@ -19,6 +20,211 @@ std::unique_ptr<ExternalLpSolver> ExternalLpSolver::get_external_lp_solver(Simpl
             throw std::runtime_error("Unknown lp solver");
     }
 }
+
+void ExternalLpSolver::updateNbValue(Simplex & simplex, Solution const & sol, LVRef v) {
+    if (sol.newBounds.contains(v)) {
+        assert(sol.newBounds.at(v) == VarBoundState::VAR_BOUND_AT_LOWER ||
+               sol.newBounds.at(v) == VarBoundState::VAR_BOUND_AT_UPPER);
+        if (sol.newBounds.at(v) == VarBoundState::VAR_BOUND_AT_LOWER)
+            simplex.changeValueToLb(v);
+        else
+            simplex.changeValueToUb(v);
+        return;
+    }
+    assert(sol.newValues.contains(v));
+    simplex.changeValueTo(v, sol.newValues.at(v));
+}
+bool ExternalLpSolver::isImpossibleToFix(Simplex const & simplex, LVRef const v) {
+    assert(simplex.tableau.isBasic(v));
+    auto const max_var_id = std::numeric_limits<unsigned>::max();
+    LVRef y_found = LVRef::Undef;
+    // Model doesn't fit the lower bound
+    if (simplex.isModelOutOfLowerBound(v)) {
+        // For the Bland rule
+        auto curr_var_id_y = max_var_id;
+        // look for nonbasic terms to fix the breaking of the bound
+        for (auto const & term : simplex.tableau.getRowPoly(v)) {
+            auto y = term.var;
+            assert(v != y);
+            assert(simplex.tableau.isNonBasic(y));
+            auto const & coeff = term.coeff;
+            bool const coeff_is_pos = isPositive(coeff);
+            if ((coeff_is_pos && simplex.isModelStrictlyUnderUpperBound(y)) ||
+                (!coeff_is_pos && simplex.isModelStrictlyOverLowerBound(y))) {
+                // Choose the leftmost nonbasic variable with a negative (reduced) cost
+                return false;
+            }
+        }
+    } else if (simplex.isModelOutOfUpperBound(v)) {
+        auto curr_var_id_y = max_var_id;
+        // look for nonbasic terms to fix the unbounding
+        for (auto const & term : simplex.tableau.getRowPoly(v)) {
+            auto y = term.var;
+            assert(v != y);
+            assert(simplex.tableau.isNonBasic(y));
+            auto const & coeff = term.coeff;
+            bool const coeff_is_pos = isPositive(coeff);
+            if ((!coeff_is_pos && simplex.isModelStrictlyUnderUpperBound(y)) ||
+                (coeff_is_pos && simplex.isModelStrictlyOverLowerBound(y))) {
+                return false;
+            }
+        }
+    } else {
+        assert(false);
+    }
+    return true;
+}
+
+/*
+ * Make the currently basic variable v with a non basic variable in its row,
+ * making v non-basic and the new variable basic.
+ * - v must be a basic variable
+ */
+bool ExternalLpSolver::alignmentPivot(Simplex & simplex, Solution & sol, LVRef v) {
+    auto const & tableau = simplex.getTableau();
+    assert(tableau.isBasic(v));
+
+    LVRef best_col = LVRef::Undef;
+    std::uint32_t best_size = -1;
+
+    // find the lower-cost variable to pivot
+    auto const & row = tableau.getRowPoly(v);
+    for (auto const & term : row) {
+        assert(tableau.isNonBasic(term.var));
+        // No point in making basic a variable that we want to be non-basic
+        if (sol.newNonBasis.contains(term.var)) continue;
+        auto const & col = tableau.getColumn(term.var);
+        if (col.size() < best_size) {
+            best_col = term.var;
+            best_size = col.size();
+        }
+    }
+
+    if (best_size == -1) {
+#ifndef NDEBUG
+        std::cerr << "No valid pivot found for variable " << v.x << std::endl;
+#endif
+        return false;
+    }
+
+    // make the variable of index best_i the basic variable for r
+    simplex.pivot(v, best_col);
+
+    if (sol.newBounds.contains(v)) {
+        switch (sol.newBounds[v]) {
+            case VarBoundState::VAR_BOUND_AT_LOWER:
+                simplex.changeValueToLb(v);
+                return true;
+            case VarBoundState::VAR_BOUND_AT_UPPER:
+                simplex.changeValueToUb(v);
+                return true;
+            default:
+                assert(false);
+                return false;
+        }
+    }
+    // If we are dealing with a free variable, just assign it the value from sol
+    assert((!simplex.hasLBound(v) && !simplex.hasUBound(v)) || sol.newValues.at(v).R().isZero());
+    simplex.changeValueTo(v, sol.newValues.at(v));
+    assert(simplex.invariantHolds());
+    return true;
+}
+
+void ExternalLpSolver::importSolution(Simplex & simplex, Solution & sol) {
+    auto const & tableau = simplex.getTableau();
+
+    // printf("\n\n*** INITIAL ***\n");
+    // print_simplex_vars_summary(stdout, solver);
+
+    for (std::uint32_t x = 0; x < tableau.getNumOfCols(); x++) {
+        LVRef const v{.x = x};
+        // Only update non-basic variables,
+        // hoping to get a feasible solution immediately
+        if (!tableau.isNonBasic(v)) continue;
+        assert(tableau.isNonBasic(v));
+        updateNbValue(simplex, sol, v);
+        assert(simplex.invariantHolds());
+    }
+
+    assert(std::ranges::all_of(simplex.candidates, [&simplex](LVRef const var) {
+        return var != LVRef::Undef && simplex.tableau.isBasic(var) && simplex.isModelOutOfBounds(var);
+    }));
+    assert(std::ranges::all_of(std::views::iota(0u, tableau.getNumOfCols()), [&simplex](std::uint32_t var) {
+        return !simplex.tableau.isBasic({.x = var}) || !simplex.isModelOutOfBounds({.x = var}) ||
+               simplex.candidates.contains({.x = var});
+    }));
+
+    // No out-of-bounds basic variables, the problem is feasible
+    if (simplex.candidates.empty()) { return; }
+    // An out-of-bound basic variable cannot be fixed, the problem is infeasible.
+    // Perform this expensive check only if we are confident the problem is infeasible
+    if (sol.linResult == LinResult::LinInfeasible) {
+        for (LVRef const v : simplex.candidates) {
+            if (isImpossibleToFix(simplex, v)) {
+                sol.infeasible_candidate = v;
+                return;
+            }
+        }
+    }
+
+    // The simple assignment was not enough, extended search is needed
+    stats.extended_search_count++;
+
+    std::unordered_set<LVRef> missing_nb_vars;
+    for (std::uint32_t x = 0; x < tableau.getNumOfCols(); x++) {
+        LVRef const v{.x = x};
+        // Add the values that are basic but must become non-basic to the set
+        if (tableau.isBasic(v) && sol.newNonBasis.contains(v)) missing_nb_vars.emplace(v);
+    }
+
+    bool performed_pivot = true;
+    while (!missing_nb_vars.empty() && !simplex.candidates.empty() && performed_pivot) {
+        performed_pivot = false;
+
+        // Go over all variables that we need to add to the basis
+        for (LVRef v : missing_nb_vars) {
+            assert(tableau.isBasic(v));
+
+            // Get the basic row
+            if (alignmentPivot(simplex, sol, v)) {
+                // A pivot has been performed.
+                // v is now non-basic and can be removed from the set
+                assert(tableau.isNonBasic(v));
+                // An out-of-bound basic variable cannot be fixed, the problem is infeasible.
+                // Perform this expensive check only if we are confident the problem is infeasible
+                if (sol.linResult == LinResult::LinInfeasible) {
+                    for (LVRef const c : simplex.candidates) {
+                        if (isImpossibleToFix(simplex, c)) {
+                            sol.infeasible_candidate = c;
+                            return;
+                        }
+                    }
+                }
+                missing_nb_vars.erase(v);
+                performed_pivot = true;
+                break;
+            }
+        }
+
+        assert(std::ranges::all_of(simplex.candidates, [&simplex](LVRef const var) {
+            return var != LVRef::Undef && simplex.tableau.isBasic(var) && simplex.isModelOutOfBounds(var);
+        }));
+        assert(std::ranges::all_of(std::views::iota(0u, tableau.getNumOfCols()), [&simplex](std::uint32_t var) {
+            return !simplex.tableau.isBasic({.x = var}) || !simplex.isModelOutOfBounds({.x = var}) ||
+                   simplex.candidates.contains({.x = var});
+        }));
+        if (simplex.candidates.empty()) return;
+    }
+
+    assert(std::ranges::all_of(simplex.candidates, [&simplex](LVRef const var) {
+        return var != LVRef::Undef && simplex.tableau.isBasic(var) && simplex.isModelOutOfBounds(var);
+    }));
+    assert(std::ranges::all_of(std::views::iota(0u, tableau.getNumOfCols()), [&simplex](std::uint32_t var) {
+        return !simplex.tableau.isBasic({.x = var}) || !simplex.isModelOutOfBounds({.x = var}) ||
+               simplex.candidates.contains({.x = var});
+    }));
+}
+
 ExternalLpSolver::ExternalLpSolver(Simplex const & simplex, SMTConfig const & config)
     : simplex(simplex),
       config(config),
@@ -37,11 +243,13 @@ ExternalLpSolver::ExternalLpSolver(Simplex const & simplex, SMTConfig const & co
         // Basic variables will form the rows of the problem, non-basic ones will be the
         if (tableau.isBasic(LVRef{.x = v})) {
             row_to_var.emplace_back(v);
-        } else if (tableau.isNonBasic(LVRef{.x = v}) || tableau.isQuasiBasic(LVRef{.x = v})) {
+        } else if (tableau.isNonBasic(LVRef{.x = v})) {
             col_to_var.emplace_back(v);
         }
+        // Ignore quasi-basic variables, since they indicate deactivated constraints
     }
 
+    stats.lp_max_nnz = std::max(stats.lp_max_nnz, nnz);
 #if 1 && !defined(NDEBUG)
     tableau.print();
     // std::cout << "Printing rows" << std::endl;
@@ -61,16 +269,20 @@ ExternalLpSolver::ExternalLpSolver(Simplex const & simplex, SMTConfig const & co
         } else {
             std::cout << "inf";
         }
-        std::cout << std::endl;
+        std::cout << " -- "
+                  << (tableau.isBasic({.x = i})      ? 'B'
+                      : tableau.isNonBasic({.x = i}) ? 'N'
+                                                     : 'Q')
+                  << std::endl;
     }
 #endif
 }
 #ifndef NDEBUG
 std::ostream & operator<<(std::ostream & os, Solution const & sol) {
-    os << "NewBounds: " << sol.newBounds << "\nNewBasis: " << sol.newBasis << "\nNewNonBasis: " << sol.newNonBasis
-       << "\nNewValues: " << sol.newValues << "\nLinResult: ";
+    os << "NewBounds: " << sol.newBounds << "\nCandidate: " << sol.infeasible_candidate.x
+       << "\nNewNonBasis: " << sol.newNonBasis << "\nNewValues: " << sol.newValues << "\nLinResult: ";
     switch (sol.linResult) {
-        case LinResult::LinUnknown:
+        case LinResult::LinError:
             return os << "unknown";
         case LinResult::LinFeasible:
             return os << "feasible";

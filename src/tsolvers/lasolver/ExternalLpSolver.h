@@ -24,12 +24,12 @@ struct ExternalLpSolverStats {
     int infeasible_correct{0};
     int infeasible_incorrect{0};
     int other{0};
-    int lp_max_nnz{0};
+    std::size_t lp_max_nnz{0};
     int adjustment_pivots_feasible{0};
     int adjustment_pivots_infeasible{0};
     int lp_solver{0};
-    int lp_setup_time{0};
-    int lp_run_time{0};
+    double lp_setup_time{0};
+    double lp_run_time{0};
     std::unordered_map<unsigned int, int> precisions{};
     std::unordered_map<int, int> iterative_refinements{};
 
@@ -51,16 +51,18 @@ struct ExternalLpSolverStats {
         os << "; Other....................: " << other << '\n';
         os << "; LP max nnz...............: " << lp_max_nnz << '\n';
         os << "; LP solver................: " << lp_solver << '\n';
-        os << "; LP setup time............: " << lp_setup_time << '\n';
-        os << "; LP run time..............: " << lp_run_time << '\n';
+        os << "; LP setup time............: " << lp_setup_time << " s\n";
+        os << "; LP run time..............: " << lp_run_time << " s \n";
+        os << "; Adjustment pivots feas...: " << adjustment_pivots_feasible << '\n';
+        os << "; Adjustment pivots infeas.: " << adjustment_pivots_infeasible << '\n';
         os << "; Precisions...............: {";
         for (auto const & [key, value] : precisions) {
-            os << key << ": " << value << '\n';
+            os << key << ": " << value << ", ";
         }
         os << "}\n";
         os << "; Iterative refinements....: {";
         for (auto const & [key, value] : iterative_refinements) {
-            os << key << ": " << value << '\n';
+            os << key << ": " << value << ", ";
         }
         os << "}\n";
         os << "; -------------------------" << '\n';
@@ -70,7 +72,8 @@ struct ExternalLpSolverStats {
 };
 
 enum class LinResult {
-    LinUnknown,    /* Unknown error */
+    LinUnknown,    /* The solver has not been invoked yet */
+    LinError,      /* An error has occurred */
     LinFeasible,   /* Relaxation is feasible */
     LinInfeasible, /* Relaxation is infeasible/all integer branches closed */
     LinExhausted
@@ -91,12 +94,18 @@ enum class VarBoundState { VAR_BOUND_AT_LOWER, VAR_BOUND_AT_UPPER };
  * simplex solver.
  */
 struct Solution {
-    std::unordered_set<LVRef> newBasis;
+    // std::unordered_set<LVRef> newBasis;
     std::unordered_set<LVRef> newNonBasis;
     std::unordered_map<LVRef, Delta> newValues;
     std::unordered_map<LVRef, VarBoundState> newBounds;
     LinResult linResult;
-    Solution() : newBasis(), newNonBasis(), newValues(), newBounds(), linResult(LinResult::LinUnknown) {}
+    LVRef infeasible_candidate;
+    Solution()
+        : newNonBasis(),
+          newValues(),
+          newBounds(),
+          linResult(LinResult::LinError),
+          infeasible_candidate(LVRef::Undef) {}
 };
 
 class ExternalLpSolver {
@@ -105,6 +114,10 @@ public:
     static constexpr std::uint32_t epsilon_den = 1000000000;
     static ExternalLpSolverStats stats;
     static std::unique_ptr<ExternalLpSolver> get_external_lp_solver(Simplex const & simplex, SMTConfig const & config);
+    static void updateNbValue(Simplex & simplex, Solution const & sol, LVRef v);
+    static bool isImpossibleToFix(Simplex const & simplex, LVRef v);
+    static void importSolution(Simplex & simplex, Solution & sol);
+    static bool alignmentPivot(Simplex & simplex, Solution & sol, LVRef v);
 
     explicit ExternalLpSolver(Simplex const & simplex, SMTConfig const & config);
     virtual ~ExternalLpSolver() = default;

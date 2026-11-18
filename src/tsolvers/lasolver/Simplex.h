@@ -17,17 +17,27 @@ namespace opensmt {
 struct SimplexStats {
     int num_bland_ops{0};
     int num_pivot_ops{0};
+    int num_tableau_pivots{0};
+    // std::uint32_t quasiToBasicConversions{0};
 
-    void printStatistics(std::ostream & os) {
+    void printStatistics(std::ostream & os) const {
         os << "; -------------------------" << '\n';
         os << "; STATISTICS FOR SIMPLEX   " << '\n';
         os << "; -------------------------" << '\n';
         os << "; Pivot operations.........: " << num_pivot_ops << '\n';
         os << "; Bland operations.........: " << num_bland_ops << '\n';
+        os << "; Tableau pivots...........: " << num_tableau_pivots << '\n';
+        // os << "; Quasi to basic conv......: " << quasiToBasicConversions << '\n';
     }
 };
 
+namespace externallp {
+    class ExternalLpSolver; // Forwards declaration
+};
+
 class Simplex {
+    friend class externallp::ExternalLpSolver;
+
 public:
     struct ExplTerm {
         LABoundRef boundref;
@@ -36,8 +46,11 @@ public:
 
     using Explanation = std::vector<ExplTerm>;
 
-    Simplex(std::unique_ptr<LRAModel> model, LABoundStore & bs, const SMTConfig & config) : model(std::move(model)), boundStore(bs), config(config) {}
-    Simplex(LABoundStore & bs, const SMTConfig & config) : model(new LRAModel(bs)), boundStore(bs), config(config) {}
+    Simplex(std::unique_ptr<LRAModel> model, LABoundStore & bs, SMTConfig const & config)
+        : model(std::move(model)),
+          boundStore(bs),
+          config(config) {}
+    Simplex(LABoundStore & bs, SMTConfig const & config) : model(new LRAModel(bs)), boundStore(bs), config(config) {}
     ~Simplex();
 
     void initModel() { model->init(); }
@@ -60,6 +73,7 @@ public:
         assert(invariantHolds());
     }
 
+    void allQasiToBasic();
     void quasiToBasic(LVRef it);
 
     Explanation assertBound(LABoundRef boundRef);
@@ -142,7 +156,7 @@ public:
         return l_Undef;
     }
 
-    const Tableau& getTableau() const { return tableau; }
+    Tableau const & getTableau() const { return tableau; }
 
 private:
     void pivot(LVRef basic, LVRef nonBasic);
@@ -155,6 +169,9 @@ private:
     inline void eraseCandidate(LVRef candidateVar);
 
     void changeValueBy(LVRef, Delta const &); // Updates the bounds after constraint pushing
+    void changeValueTo(LVRef, Delta const &); // Updates the bounds after constraint pushing
+    void changeValueToLb(LVRef); // Updates the bounds after constraint pushing
+    void changeValueToUb(LVRef); // Updates the bounds after constraint pushing
     void refineBounds() { return; } // Compute the bounds for touched polynomials and deduces new bounds from it
 
     //    bool isEquality(LVRef) const;
@@ -195,7 +212,7 @@ private:
     // Keeping track of activated bounds
     std::vector<std::pair<LVRef, LABoundRef>> bufferOfActivatedBounds;
     std::vector<unsigned int> boundsActivated;
-    const SMTConfig & config;
+    SMTConfig const & config;
 };
 } // namespace opensmt
 

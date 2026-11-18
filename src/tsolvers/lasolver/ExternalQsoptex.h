@@ -67,11 +67,11 @@ public:
     ~ExternalQsoptex() override;
 
     Solution solve() override;
-    virtual void solveImpl() = 0;
 
 protected:
     [[nodiscard]] int numCols() const { return rat_QSget_colcount(d_qsx); }
     [[nodiscard]] int numRows() const { return rat_QSget_rowcount(d_qsx); }
+    virtual void solveImpl(unsigned int & precision, rat_class & delta) = 0;
 #if 0
 
     mpq_class const & varToLb(ArithVar v) const;
@@ -125,11 +125,7 @@ protected:
     template<VariableType VarType>
     void extractVarValue(int idx, Solution & sol) const;
     [[nodiscard]] virtual bool isStrictVarZero() const = 0;
-
-public:
-protected:
-    bool d_solvedRelaxation;
-    bool d_solvedMIP;
+    [[nodiscard]] LinResult qsxStatusToSolStatus() const;
 };
 
 class ExternalQsoptexEpsilon final : public ExternalQsoptex {
@@ -137,16 +133,16 @@ public:
     ExternalQsoptexEpsilon(Simplex const & simplex, SMTConfig const & config);
 
 protected:
-    void solveImpl() override;
+    void solveImpl(unsigned int & precision, rat_class & delta) override;
+
+    [[nodiscard]] bool isStrictVarZero() const override { return false; }
+
+    [[nodiscard]] Solution extractSolution() override;
 
 private:
     /** UTILITIES FOR DEALING WITH ESTIMATES */
 
     static constexpr double SMALL_FIXED_EPSILON = .000000001;
-
-    [[nodiscard]] Solution extractSolution() override;
-
-    bool isStrictVarZero() const override { return false; }
 };
 
 class ExternalQsoptexStrict final : public ExternalQsoptex {
@@ -154,17 +150,17 @@ public:
     ExternalQsoptexStrict(Simplex const & simplex, SMTConfig const & config);
 
 protected:
-    void solveImpl() override;
+    void solveImpl(unsigned int & precision, rat_class & delta) override;
 
-private:
-    std::vector<LVRef> d_strictVars;
-
-    [[nodiscard]] Solution extractSolution() override;
-
-    bool isStrictVarZero() const override {
+    [[nodiscard]] bool isStrictVarZero() const override {
         if (!d_x.empty()) return d_x[numCols() - 1].sgn() == 0;
         return false;
     }
+
+    [[nodiscard]] Solution extractSolution() override;
+
+private:
+    std::vector<LVRef> d_strictVars;
 };
 } // namespace opensmt::externallp
 
