@@ -120,6 +120,9 @@ bool rat_class::isZero() const {
 bool rat_class::isNonZero() const {
     return !rat_is_zero(rat);
 }
+bool rat_class::isFinite() const {
+    return rat_is_finite(rat);
+}
 
 #ifndef NDEBUG
 std::ostream & operator<<(std::ostream & os, rat_class const & val) {
@@ -174,6 +177,8 @@ ExternalQsoptex::~ExternalQsoptex() {
     d_basis.nrows = 0;
 }
 Solution ExternalQsoptex::solve() {
+    if (col_to_var.empty() || row_to_var.empty()) return {LinResult::LinEmtpy};
+
 #if 1 && !defined(NDEBUG)
     static int i = 0;
     // rat_QSdump_prob(qsx.prob);
@@ -184,12 +189,13 @@ Solution ExternalQsoptex::solve() {
              "/home/campus.ncl.ac.uk/c3054737/Programming/phd/opensmt/"
              "qsproblem_%d_%s.lp",
              i, config.epsilon_mode() ? "epsilon" : "strict");
-    rat_QSwrite_prob(d_qsx, filename, "LP");
+    int const res = rat_QSwrite_prob(d_qsx, filename, "LP");
+    assert(res == 0);
     i++;
 #endif
 
     unsigned int precision = 0;
-    rat_class delta{config.delta()};
+    rat_class delta{std::max(config.delta(), 0.0)};
     solveImpl(precision, delta);
 
     // Update the statistics
@@ -327,9 +333,22 @@ ExternalQsoptexEpsilon::ExternalQsoptexEpsilon(Simplex const & simplex, SMTConfi
         rat_class const & lb = get_bound<true, true>(simplex, v, config.delta(), lb_temp);
         rat_class const & ub = get_bound<true, false>(simplex, v, config.delta(), ub_temp);
 
-        var_to_col[v.x] = numCols();
+        var_to_col.at(v.x) = numCols();
         assert(lb <= ub);
-        rat_QSnew_col(d_qsx, rat_zeroLpNum, lb.data(), ub.data(), nullptr);
+        rat_QSnew_col(d_qsx, rat_zeroLpNum, lb.data(), ub.data(),
+#ifndef NDEBUG
+                      (std::string("V") + std::to_string(v.x)).c_str()
+#else
+                      nullptr
+#endif
+        );
+#ifndef NDEBUG
+        rat_class temp;
+        rat_QSget_bound(d_qsx, numCols() - 1, 'L', &*temp);
+        assert(temp == lb);
+        rat_QSget_bound(d_qsx, numCols() - 1, 'U', &*temp);
+        assert(temp == ub);
+#endif
     }
 
     // Construct the rows of the LP by parsing the polynomial constraints together
@@ -395,16 +414,12 @@ void ExternalQsoptexEpsilon::solveImpl(unsigned int & precision, rat_class & del
     assert(res == 0);
 }
 Solution ExternalQsoptexEpsilon::extractSolution() {
-    Solution sol;
-    sol.linResult = qsxStatusToSolStatus();
+    Solution sol(qsxStatusToSolStatus(), numCols(), numRows());
     // If we do not have a valid solution, just return the error back to the soplex.
     if (sol.linResult != LinResult::LinFeasible && sol.linResult != LinResult::LinInfeasible) return sol;
     assert(d_status == QS_LP_OPTIMAL || d_status == QS_LP_DELTA_OPTIMAL || d_status == QS_LP_FEASIBLE ||
            d_status == QS_LP_DELTA_FEASIBLE || d_status == QS_LP_UNBOUNDED || d_status == QS_LP_INFEASIBLE);
 
-    sol.newNonBasis.reserve(numCols());
-    sol.newValues.reserve(numCols() + numRows());
-    sol.newBounds.reserve(numCols() + numRows());
     for (int colIdx = 0; colIdx < numCols(); colIdx++) {
         extractVarValue<VariableType::COL>(colIdx, sol);
     }
@@ -415,7 +430,217 @@ Solution ExternalQsoptexEpsilon::extractSolution() {
     return sol;
 }
 ExternalQsoptexStrict::ExternalQsoptexStrict(Simplex const & simplex, SMTConfig const & config)
-    : ExternalQsoptex(simplex, config) {}
+    : ExternalQsoptex(simplex, config) {
+    if (col_to_var.empty() || row_to_var.empty()) return;
+
+    Tableau const & tableau = simplex.getTableau();
+    int const strict_var_col = static_cast<int>(col_to_var.size());
+
+    // Construct the columns of the LP by assigning upper/lower bounds to each
+    // variable
+    std::uint32_t num_additional_strict_rows = 0;
+    std::uint32_t nnz_strict_rows = 0;
+    for (LVRef const v : col_to_var) {
+        if (hasStrictLb(v)) {
+            num_additional_strict_rows++;
+            nnz_strict_rows += 2;
+        }
+        if (hasStrictUb(v)) {
+            num_additional_strict_rows++;
+            nnz_strict_rows += 2;
+        }
+    }
+    for (LVRef const v : row_to_var) {
+        if (hasStrictLb(v) || hasStrictUb(v)) {
+            num_additional_strict_rows++;
+            nnz_strict_rows += 2 + tableau.getRowPoly(v).size();
+        }
+    }
+
+    std::vector<LVRef> rowToArithVarSplit;
+    std::vector<int> numNonZeroPerRow;
+    std::vector<int> beginRowIdx;
+    std::vector<int> colIdxs;
+    std::vector<rat_class> values;
+
+    rowToArithVarSplit.reserve(row_to_var.size() + num_additional_strict_rows);
+    d_rhs.reserve(row_to_var.size() + num_additional_strict_rows);
+    d_range.reserve(row_to_var.size() + num_additional_strict_rows);
+    numNonZeroPerRow.reserve(row_to_var.size() + num_additional_strict_rows);
+    beginRowIdx.reserve(row_to_var.size() + num_additional_strict_rows);
+    colIdxs.reserve(nnz + nnz_strict_rows);
+    values.reserve(nnz + nnz_strict_rows);
+    d_sense.reserve(row_to_var.size() + num_additional_strict_rows);
+
+    rat_class lb_temp, ub_temp;
+    for (LVRef const v : col_to_var) {
+        assert(tableau.isNonBasic(v));
+        rat_class const & lb = get_bound<false, true>(simplex, v, config.delta(), lb_temp);
+        rat_class const & ub = get_bound<false, false>(simplex, v, config.delta(), ub_temp);
+
+        bool const isLbStrict = hasStrictLb(v);
+        bool const isUbStrict = hasStrictUb(v);
+
+        if (isLbStrict) {
+            assert(lb.isFinite());
+            numNonZeroPerRow.emplace_back(2);
+            beginRowIdx.emplace_back(colIdxs.size());
+            colIdxs.emplace_back(numCols()); // Col of the variable we are about to add
+            colIdxs.emplace_back(strict_var_col);
+            values.emplace_back(1);
+            values.emplace_back(-1);
+            d_sense.emplace_back('G');
+            d_rhs.emplace_back(lb);
+            d_range.emplace_back(0);
+            rowToArithVarSplit.emplace_back(v);
+        }
+
+        if (isUbStrict) {
+            assert(ub.isFinite());
+            numNonZeroPerRow.emplace_back(2);
+            beginRowIdx.emplace_back(colIdxs.size());
+            colIdxs.emplace_back(numCols()); // Col of the variable we are about to add
+            colIdxs.emplace_back(strict_var_col);
+            values.emplace_back(1);
+            values.emplace_back(1);
+            d_sense.emplace_back('L');
+            d_rhs.emplace_back(ub);
+            d_range.emplace_back(0);
+            rowToArithVarSplit.emplace_back(v);
+        }
+
+        assert(lb <= ub);
+        var_to_col.at(v.x) = numCols();
+        rat_QSnew_col(d_qsx, rat_zeroLpNum, isLbStrict ? rat_NINFTY : lb.data(), isUbStrict ? rat_INFTY : ub.data(),
+#ifndef NDEBUG
+                      (std::string("V") + std::to_string(v.x)).c_str()
+#else
+                      nullptr
+#endif
+        );
+
+#ifndef NDEBUG
+        rat_class temp;
+        rat_QSget_bound(d_qsx, numCols() - 1, 'L', &*temp);
+        assert(temp == lb || hasStrictLb(v));
+        rat_QSget_bound(d_qsx, numCols() - 1, 'U', &*temp);
+        assert(temp == ub || hasStrictUb(v));
+#endif
+    }
+
+    // At the end, add the strict variable column,
+    // which is used to encode the strict bounds
+    rat_QSnew_col(d_qsx, minus_one.data(), rat_zeroLpNum, rat_oneLpNum, nullptr);
+
+    // Construct the rows of the LP by parsing the polynomial constraints together
+    // with the row bounds on the auxiliary variables
+    for (LVRef const v : row_to_var) {
+        assert(tableau.isBasic(v));
+
+        PolynomialT<LVRef> const & p = tableau.getRowPoly(v);
+        numNonZeroPerRow.emplace_back(p.size());
+        beginRowIdx.emplace_back(colIdxs.size());
+        for (auto const & term : p) {
+            int const colIdx = var_to_col[term.var.x];
+            assert(colIdx >= 0);
+            colIdxs.emplace_back(colIdx);
+            values.emplace_back(term.coeff);
+        }
+
+        rat_class const & lb = get_bound<false, true>(simplex, v, config.delta(), lb_temp);
+        rat_class const & ub = get_bound<false, false>(simplex, v, config.delta(), ub_temp);
+
+        if (hasStrictBound(v)) {
+            bool const isLbStrict = hasStrictLb(v);
+
+            if (simplex.hasLBound(v)) {
+                if (isLbStrict) {
+                    numNonZeroPerRow.back()++;
+                    colIdxs.emplace_back(strict_var_col);
+                    values.emplace_back(-1);
+                }
+                assert(lb.isFinite());
+                d_rhs.emplace_back(lb);
+                d_range.emplace_back(0);
+                d_sense.emplace_back('G');
+                rowToArithVarSplit.emplace_back(v);
+            }
+
+            // Case II: we are dealing with a row with at least one bound. If both
+            // bounds are set, we add the row twice, once for the lower bound and once
+            // for the upper bound.
+            if (hasBothBounds(v)) {
+                // Insert all cols (except strict col, if present)
+                beginRowIdx.emplace_back(colIdxs.size());
+                colIdxs.insert(colIdxs.end(), colIdxs.end() - numNonZeroPerRow.back(),
+                               isLbStrict ? colIdxs.end() - 1 : colIdxs.end());
+                // Insert all values (except strict col, if present)
+                values.insert(values.end(), values.end() - numNonZeroPerRow.back(),
+                              isLbStrict ? values.end() - 1 : values.end());
+                numNonZeroPerRow.emplace_back(isLbStrict ? numNonZeroPerRow.back() - 1 : numNonZeroPerRow.back());
+            }
+
+            if (simplex.hasUBound(v)) {
+                if (hasStrictUb(v)) {
+                    numNonZeroPerRow.back()++;
+                    colIdxs.emplace_back(strict_var_col);
+                    values.emplace_back(1);
+                }
+                assert(ub.isFinite());
+                d_rhs.emplace_back(ub);
+                d_range.emplace_back(0);
+                d_sense.emplace_back('L');
+                rowToArithVarSplit.emplace_back(v);
+            }
+        } else {
+            assert(!hasStrictBound(v));
+            rowToArithVarSplit.emplace_back(v);
+            if (hasBothBounds(v)) // Bounded
+            {
+                assert(lb.isFinite() && ub.isFinite());
+                d_rhs.emplace_back(lb);
+                d_range.emplace_back(ub - lb);
+                d_sense.emplace_back('R');
+            } else if (simplex.hasLBound(v)) // Only lower bound
+            {
+                assert(lb.isFinite());
+                d_rhs.emplace_back(lb);
+                d_range.emplace_back(0);
+                d_sense.emplace_back('G');
+            } else if (simplex.hasUBound(v)) // Only upper bound
+            {
+                assert(ub.isFinite());
+                d_rhs.emplace_back(ub);
+                d_range.emplace_back(0);
+                d_sense.emplace_back('L');
+            } else // Unbounded
+            {
+                d_rhs.emplace_back(ninfinity);
+                d_range.emplace_back(0);
+                d_sense.emplace_back('G');
+            }
+        }
+    }
+
+#if 0 && !defined(NDEBUG)
+    std::cout << numNonZeroPerRow << std::endl;
+    std::cout << beginRowIdx << std::endl;
+    std::cout << colIdxs << std::endl;
+    std::cout << values << std::endl;
+    std::cout << d_rhs << std::endl;
+    std::cout << d_sense << std::endl;
+    std::cout << d_range << std::endl;
+#endif
+
+    static_assert(sizeof(rat_class) == sizeof(rat_t), "mpq_class layout assumption broken");
+    rat_QSadd_ranged_rows(d_qsx, static_cast<int>(numNonZeroPerRow.size()), numNonZeroPerRow.data(), beginRowIdx.data(),
+                          colIdxs.data(), reinterpret_cast<rat_t const *>(values.data()),
+                          reinterpret_cast<rat_t const *>(d_rhs.data()), d_sense.data(),
+                          reinterpret_cast<rat_t const *>(d_range.data()), nullptr);
+
+    row_to_var = std::move(rowToArithVarSplit);
+    d_y.resize(row_to_var.size());
+}
 
 void ExternalQsoptexStrict::solveImpl(unsigned int & precision, rat_class & delta) {
     rat_class obj_lb, obj_ub;
@@ -425,16 +650,11 @@ void ExternalQsoptexStrict::solveImpl(unsigned int & precision, rat_class & delt
     assert(res == 0);
 }
 Solution ExternalQsoptexStrict::extractSolution() {
-    Solution sol;
-    sol.linResult = qsxStatusToSolStatus();
+    Solution sol(qsxStatusToSolStatus(), numCols(), numRows());
     // If we do not have a valid solution, just return the error back to the soplex.
     if (sol.linResult != LinResult::LinFeasible && sol.linResult != LinResult::LinInfeasible) return sol;
     assert(d_status == QS_LP_OPTIMAL || d_status == QS_LP_DELTA_OPTIMAL || d_status == QS_LP_FEASIBLE ||
            d_status == QS_LP_DELTA_FEASIBLE || d_status == QS_LP_UNBOUNDED || d_status == QS_LP_INFEASIBLE);
-
-    sol.newNonBasis.reserve(numCols());
-    sol.newValues.reserve(numCols() + numRows());
-    sol.newBounds.reserve(numCols() + numRows());
 
     bool isStrictBasic = d_basis.cstat[numCols() - 1] == QS_COL_BSTAT_BASIC;
 
@@ -462,16 +682,15 @@ Solution ExternalQsoptexStrict::extractSolution() {
 
     if (d_status == QS_LP_OPTIMAL || d_status == QS_LP_DELTA_OPTIMAL || d_status == QS_LP_FEASIBLE ||
         d_status == QS_LP_DELTA_FEASIBLE || d_status == QS_LP_UNBOUNDED || d_status == QS_LP_INFEASIBLE) {
-        for (int colIdx = 0; colIdx < static_cast<int>(col_to_var.size()); colIdx++) {
-            // This way, we skip the strict-var, since it is not included in col_to_var
-            extractVarValue<VariableType::COL>(colIdx, sol);
+        for (int rowIdx = 0; rowIdx < numRows(); rowIdx++) {
+            extractVarValue<VariableType::ROW>(rowIdx, sol);
         }
 
-        for (int rowIdx = 0; rowIdx < numRows(); rowIdx++) {
-            LVRef const v = row_to_var[rowIdx];
-            // We already encountered the nonbasic version of this row, we can skip it
-            if (sol.newNonBasis.contains(v)) continue;
-            extractVarValue<VariableType::ROW>(rowIdx, sol);
+        // This way, we skip the strict-var, since it is not included in col_to_var
+        for (int colIdx = 0; colIdx < static_cast<int>(col_to_var.size()); colIdx++) {
+            // We already encountered the nonbasic version of this variable, we can skip it
+            if (sol.newNonBasis.contains(LVRef{col_to_var[colIdx]})) continue;
+            extractVarValue<VariableType::COL>(colIdx, sol);
         }
     } else { // Unknown status code
         assert(false);
@@ -484,8 +703,6 @@ Solution ExternalQsoptexStrict::extractSolution() {
     // }
     // If the strict variable is basic, we need to add some other non-basic
     // variable to the basis to maintain the same number of basic variables
-
-    assert(sol.linResult == qsxStatusToSolStatus());
     return sol;
 }
 

@@ -28,6 +28,7 @@ public:
     void setNInfinity();
     [[nodiscard]] bool isZero() const;
     [[nodiscard]] bool isNonZero() const;
+    [[nodiscard]] bool isFinite() const;
 
     rat_class(rat_class const & o);
     rat_class(rat_class && o) noexcept;

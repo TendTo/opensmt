@@ -107,30 +107,26 @@ bool ExternalLpSolver::alignmentPivot(Simplex & simplex, Solution & sol, LVRef v
         return false;
     }
 
-    // make the variable of index best_i the basic variable for r
-    simplex.pivot(v, best_col);
+    assert(!sol.newBounds.contains(v) || sol.newBounds.at(v) != VarBoundState::VAR_BOUND_AT_LOWER ||
+           simplex.hasLBound(v));
+    assert(!sol.newBounds.contains(v) || sol.newBounds.at(v) != VarBoundState::VAR_BOUND_AT_UPPER ||
+           simplex.hasUBound(v));
+    assert(sol.newBounds.contains(v) || (!simplex.hasLBound(v) && !simplex.hasUBound(v)) ||
+           sol.newValues.at(v).R().isZero());
 
-    if (sol.newBounds.contains(v)) {
-        switch (sol.newBounds[v]) {
-            case VarBoundState::VAR_BOUND_AT_LOWER:
-                simplex.changeValueToLb(v);
-                return true;
-            case VarBoundState::VAR_BOUND_AT_UPPER:
-                simplex.changeValueToUb(v);
-                return true;
-            default:
-                assert(false);
-                return false;
-        }
-    }
-    // If we are dealing with a free variable, just assign it the value from sol
-    assert((!simplex.hasLBound(v) && !simplex.hasUBound(v)) || sol.newValues.at(v).R().isZero());
-    simplex.changeValueTo(v, sol.newValues.at(v));
-    assert(simplex.invariantHolds());
+    // Determine the new value for the variable that is about to become non-basic
+    Delta const & newVal =
+        sol.newBounds.contains(v)
+            ? (sol.newBounds.at(v) == VarBoundState::VAR_BOUND_AT_LOWER ? simplex.Lb(v) : simplex.Ub(v))
+            : sol.newValues.at(v);
+    simplex.pivot(v, best_col, &newVal);
     return true;
 }
 
 void ExternalLpSolver::importSolution(Simplex & simplex, Solution & sol) {
+    // We only import solutions that are either feasible or infeasible, ignoring errors and similar situations
+    if (sol.linResult != LinResult::LinFeasible && sol.linResult != LinResult::LinInfeasible) return;
+
     auto const & tableau = simplex.getTableau();
 
     // printf("\n\n*** INITIAL ***\n");
@@ -239,12 +235,13 @@ ExternalLpSolver::ExternalLpSolver(Simplex const & simplex, SMTConfig const & co
     }
 
     var_to_col = std::vector<int>(tableau.getNumOfCols(), -1);
-    for (std::uint32_t v = 0; v < tableau.getNumOfCols(); v++) {
+    for (std::uint32_t x = 0; x < tableau.getNumOfCols(); x++) {
+        LVRef const v{.x = x};
         // Basic variables will form the rows of the problem, non-basic ones will be the
-        if (tableau.isBasic(LVRef{.x = v})) {
-            row_to_var.emplace_back(v);
-        } else if (tableau.isNonBasic(LVRef{.x = v})) {
+        if (tableau.isNonBasic(v)) {
             col_to_var.emplace_back(v);
+        } else if (tableau.isBasic(v) && (simplex.hasLBound(v) || simplex.hasUBound(v))) { // Only add bounded rows
+            row_to_var.emplace_back(v);
         }
         // Ignore quasi-basic variables, since they indicate deactivated constraints
     }

@@ -106,8 +106,8 @@ Simplex::Explanation Simplex::checkSimplex() {
                 externallp::ExternalLpSolver::stats.adjustment_pivots_feasible += adjustment_pivots;
                 if (external_result == externallp::LinResult::LinFeasible)
                     externallp::ExternalLpSolver::stats.feasible_correct++;
-                else
-                    externallp::ExternalLpSolver::stats.feasible_incorrect++;
+                else if (external_result == externallp::LinResult::LinInfeasible)
+                    externallp::ExternalLpSolver::stats.infeasible_incorrect++;
             }
 #endif
             return Explanation();
@@ -129,8 +129,8 @@ Simplex::Explanation Simplex::checkSimplex() {
                 externallp::ExternalLpSolver::stats.adjustment_pivots_infeasible += adjustment_pivots;
                 if (external_result == externallp::LinResult::LinInfeasible)
                     externallp::ExternalLpSolver::stats.infeasible_correct++;
-                else
-                    externallp::ExternalLpSolver::stats.infeasible_incorrect++;
+                else if (external_result == externallp::LinResult::LinFeasible)
+                    externallp::ExternalLpSolver::stats.feasible_incorrect++;
             }
 #endif
             return getConflictingBounds(x, isOutOfLowerBound);
@@ -327,12 +327,12 @@ void Simplex::eraseCandidate(LVRef candidateVar) {
     candidates.erase(candidateVar);
 }
 
-void Simplex::pivot(LVRef const bv, LVRef const nv) {
+void Simplex::pivot(LVRef const bv, LVRef const nv, Delta const * newVal) {
     assert(tableau.isBasic(bv));
     assert(tableau.isNonBasic(nv));
     simplex_assert(valueConsistent(bv));
     //    tableau.print();
-    updateValues(bv, nv);
+    updateValues(bv, nv, newVal);
     tableau.pivot(bv, nv);
     // after pivot, bv is not longer a candidate
     eraseCandidate(bv);
@@ -376,15 +376,15 @@ void Simplex::changeValueToUb(LVRef const var) {
     changeValueTo(var, Ub(var));
 }
 
-void Simplex::updateValues(LVRef const bv, LVRef const nv) {
+void Simplex::updateValues(LVRef const bv, LVRef const nv, Delta const * newVal) {
     // assert(isModelOutOfBounds(bv));
-    auto const & bvNewVal = (isModelOutOfLowerBound(bv)) ? model->Lb(bv) : model->Ub(bv);
+    auto const & bvNewVal = newVal ? *newVal : (isModelOutOfLowerBound(bv)) ? model->Lb(bv) : model->Ub(bv);
     auto const & coeff = tableau.getCoeff(bv, nv);
     // nvDiff represents how much we need to change nv, so that bv gets to the right value
     auto nvDiff = (bvNewVal - model->read(bv)) / coeff;
     // update nv's value
     changeValueBy(nv, nvDiff);
-    assert(!isModelOutOfBounds(nv));
+    // assert(!isModelOutOfBounds(nv));
     assert(!isModelOutOfBounds(bv));
 }
 

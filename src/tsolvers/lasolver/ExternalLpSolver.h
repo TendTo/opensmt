@@ -73,6 +73,7 @@ struct ExternalLpSolverStats {
 
 enum class LinResult {
     LinUnknown,    /* The solver has not been invoked yet */
+    LinEmtpy,      /* There are no constraints */
     LinError,      /* An error has occurred */
     LinFeasible,   /* Relaxation is feasible */
     LinInfeasible, /* Relaxation is infeasible/all integer branches closed */
@@ -100,12 +101,13 @@ struct Solution {
     std::unordered_map<LVRef, VarBoundState> newBounds;
     LinResult linResult;
     LVRef infeasible_candidate;
-    Solution()
-        : newNonBasis(),
-          newValues(),
-          newBounds(),
-          linResult(LinResult::LinError),
-          infeasible_candidate(LVRef::Undef) {}
+    Solution(LinResult const result = LinResult::LinUnknown, int const num_cols = 0, int const num_rows = 0)
+        : linResult(result),
+          infeasible_candidate(LVRef::Undef) {
+        newNonBasis.reserve(num_cols);
+        newValues.reserve(num_cols + num_rows);
+        newBounds.reserve(num_cols + num_rows);
+    }
 };
 
 class ExternalLpSolver {
@@ -122,7 +124,12 @@ public:
     explicit ExternalLpSolver(Simplex const & simplex, SMTConfig const & config);
     virtual ~ExternalLpSolver() = default;
 
+    [[nodiscard]] bool hasBothBounds(LVRef const v) const { return simplex.hasLBound(v) && simplex.hasUBound(v); }
     [[nodiscard]] bool hasEitherBound(LVRef const v) const { return simplex.hasLBound(v) || simplex.hasUBound(v); }
+    [[nodiscard]] bool hasStrictLb(LVRef const v) const { return simplex.hasLBound(v) && !simplex.Lb(v).D().isZero(); }
+    [[nodiscard]] bool hasStrictUb(LVRef const v) const { return simplex.hasUBound(v) && !simplex.Ub(v).D().isZero(); }
+    [[nodiscard]] bool hasStrictBound(LVRef const v) const { return hasStrictLb(v) || hasStrictUb(v); }
+    [[nodiscard]] bool hasBothStrictBound(LVRef const v) const { return hasStrictLb(v) && hasStrictUb(v); }
 
     virtual Solution solve() = 0;
 

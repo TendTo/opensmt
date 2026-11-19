@@ -159,12 +159,12 @@ public:
     Tableau const & getTableau() const { return tableau; }
 
 private:
-    void pivot(LVRef basic, LVRef nonBasic);
+    void pivot(LVRef basic, LVRef nonBasic, const Delta* newVal = nullptr);
     LVRef getBasicVarToFixByBland() const;
     LVRef getBasicVarToFixByShortestPoly() const;
     LVRef findNonBasicForPivotByBland(LVRef basicVar);
     LVRef findNonBasicForPivotByHeuristic(LVRef basicVar);
-    void updateValues(LVRef basicVar, LVRef nonBasicVar);
+    void updateValues(LVRef basicVar, LVRef nonBasicVar, const Delta* newVal = nullptr);
     inline void newCandidate(LVRef candidateVar);
     inline void eraseCandidate(LVRef candidateVar);
 
