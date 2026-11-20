@@ -331,7 +331,11 @@ SMTConfig parseCMDLineArgs( int argc, char * argv[ ] )
                         res.setOption(SMTConfig::o_pivot_threshold, SMTOption(atoi(optarg)), msg);
                         break;
                     case LongOpt::externalLpSolver:
-                        res.setOption(SMTConfig::o_external_lp_solver, SMTOption(atoi(optarg)), msg);
+                        res.setOption(SMTConfig::o_external_lp_solver,
+                      SMTOption(strncasecmp(optarg, "soplex", 6) == 0 ? 1
+                                : strncasecmp(optarg, "qsoptex", 7) == 0 ? 0
+                                                                   : atoi(optarg)),
+                      msg);
                         break;
                     case LongOpt::epsilonMode:
                         res.setOption(SMTConfig::o_epsilon_mode, SMTOption(true), msg);

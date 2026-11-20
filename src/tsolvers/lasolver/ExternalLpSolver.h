@@ -13,7 +13,6 @@
 namespace opensmt::externallp {
 
 struct ExternalLpSolverStats {
-    int external_pivots{0};
     double max_delta{0.0};
     int delta_calls{0};
     int calls{0};
@@ -38,7 +37,6 @@ struct ExternalLpSolverStats {
         os << "; -------------------------" << '\n';
         os << "; STATISTICS FOR EXT. SPX. " << '\n';
         os << "; -------------------------" << '\n';
-        os << "; External pivots..........: " << external_pivots << '\n';
         os << "; Max delta................: " << max_delta << '\n';
         os << "; Delta calls..............: " << delta_calls << '\n';
         os << "; External calls...........: " << calls << '\n';
@@ -112,6 +110,7 @@ struct Solution {
 
 class ExternalLpSolver {
 public:
+    static constexpr int lp_pivot_threshold = 1000000;
     static constexpr std::int32_t epsilon_num = 1;
     static constexpr std::uint32_t epsilon_den = 1000000000;
     static ExternalLpSolverStats stats;

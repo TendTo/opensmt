@@ -29,6 +29,8 @@ public:
     [[nodiscard]] bool isZero() const;
     [[nodiscard]] bool isNonZero() const;
     [[nodiscard]] bool isFinite() const;
+    std::strong_ordering operator<=>(rat_class const & o) const;
+    std::strong_ordering operator<=>(FastRational const & o) const;
 
     rat_class(rat_class const & o);
     rat_class(rat_class && o) noexcept;
@@ -73,38 +75,6 @@ protected:
     [[nodiscard]] int numCols() const { return rat_QSget_colcount(d_qsx); }
     [[nodiscard]] int numRows() const { return rat_QSget_rowcount(d_qsx); }
     virtual void solveImpl(unsigned int & precision, rat_class & delta) = 0;
-#if 0
-
-    mpq_class const & varToLb(ArithVar v) const;
-    mpq_class const & varToUb(ArithVar v) const;
-    bool hasStrictBound(ArithVar v) const;
-    bool hasStrictLb(ArithVar v) const;
-    bool hasStrictUB(ArithVar v) const;
-
-    mpq_class const & getY(int const rowIdx) const {
-        Assert(d_qsx && d_qsx->lp && d_qsx->lp->pIpiz);
-        return toMpqClass(d_qsx->lp->pIpiz[rowIdx]);
-    }
-    virtual external::Solution extractSolution(bool mip) = 0;
-
-
-    ArithVar _getArithVar(int nid, int M, int ind) const;
-    ArithVar getArithVarFromRow(int nid, int ind) const {
-        if (ind >= 0) {
-            NodeLog const & nl = d_log.getNode(nid);
-            return nl.lookupRowId(ind);
-        }
-        return ARITHVAR_SENTINEL;
-    }
-
-    ArithVar getArithVarFromStructural(int ind) const {
-        if (ind >= 0) {
-            unsigned u = (unsigned)ind;
-            if (u < d_colToArithVar.size()) { return d_colToArithVar[u]; }
-        }
-        return ARITHVAR_SENTINEL;
-    }
-#endif
 
     rat_QSprob d_qsx;
 
@@ -131,6 +101,7 @@ protected:
 
 class ExternalQsoptexEpsilon final : public ExternalQsoptex {
 public:
+    static constexpr bool isEpsilon = true;
     ExternalQsoptexEpsilon(Simplex const & simplex, SMTConfig const & config);
 
 protected:
@@ -141,13 +112,12 @@ protected:
     [[nodiscard]] Solution extractSolution() override;
 
 private:
-    /** UTILITIES FOR DEALING WITH ESTIMATES */
-
     static constexpr double SMALL_FIXED_EPSILON = .000000001;
 };
 
 class ExternalQsoptexStrict final : public ExternalQsoptex {
 public:
+    static constexpr bool isEpsilon = false;
     ExternalQsoptexStrict(Simplex const & simplex, SMTConfig const & config);
 
 protected:
@@ -159,9 +129,6 @@ protected:
     }
 
     [[nodiscard]] Solution extractSolution() override;
-
-private:
-    std::vector<LVRef> d_strictVars;
 };
 } // namespace opensmt::externallp
 
