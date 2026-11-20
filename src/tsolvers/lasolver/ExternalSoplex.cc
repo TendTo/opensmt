@@ -129,17 +129,6 @@ ExternalSoplex::ExternalSoplex(Simplex const & simplex, SMTConfig const & config
 Solution ExternalSoplex::solve() {
     if (col_to_var.empty() || row_to_var.empty()) return {LinResult::LinEmtpy};
 
-#if 1 && !defined(NDEBUG)
-    static int j = 0;
-    fprintf(stderr, "Problem %d %s: n_cols = %d, n_rows = %d\n", j, config.epsilon_mode() ? "epsilon" : "strict",
-            numCols(), numRows());
-    std::string const filename{"/home/campus.ncl.ac.uk/c3054737/Programming/phd/opensmt/"
-                               "spproblem_" +
-                               std::to_string(j) + "_" + (config.epsilon_mode() ? "epsilon" : "strict") + ".lp"};
-    d_spx.writeFileRational(filename.c_str());
-    j++;
-#endif
-
     SpxStatus res = SpxStatus::UNKNOWN;
     try {
         res = d_spx.optimize();
@@ -299,16 +288,6 @@ ExternalSoplexEpsilon::ExternalSoplexEpsilon(Simplex const & simplex, SMTConfig 
 
         rows.add({lb, vec, ub});
     }
-
-#if 0 && !defined(NDEBUG)
-    std::cout << numNonZeroPerRow << std::endl;
-    std::cout << beginRowIdx << std::endl;
-    std::cout << colIdxs << std::endl;
-    std::cout << values << std::endl;
-    std::cout << d_rhs << std::endl;
-    std::cout << d_sense << std::endl;
-    std::cout << d_range << std::endl;
-#endif
 
     // Add both columns and rows to the LP
     d_spx.addColsRational(cols);

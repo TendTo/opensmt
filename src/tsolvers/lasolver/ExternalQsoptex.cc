@@ -208,19 +208,6 @@ ExternalQsoptex::~ExternalQsoptex() {
 Solution ExternalQsoptex::solve() {
     if (col_to_var.empty() || row_to_var.empty()) return {LinResult::LinEmtpy};
 
-#if 1 && !defined(NDEBUG)
-    static int i = 0;
-    // rat_QSdump_prob(qsx.prob);
-    fprintf(stderr, "Problem %d %s: n_cols = %d, n_rows = %d\n", i, config.epsilon_mode() ? "epsilon" : "strict",
-            numCols(), numRows());
-    std::string const filename{"/home/campus.ncl.ac.uk/c3054737/Programming/phd/opensmt/"
-                               "qsproblem_" +
-                               std::to_string(i) + "_" + (config.epsilon_mode() ? "epsilon" : "strict") + ".lp"};
-    int const res = rat_QSwrite_prob(d_qsx, filename.c_str(), "LP");
-    assert(res == 0);
-    i++;
-#endif
-
     unsigned int precision = 0;
     rat_class delta{std::max(config.delta(), 0.0)};
     solveImpl(precision, delta);
@@ -421,16 +408,6 @@ ExternalQsoptexEpsilon::ExternalQsoptexEpsilon(Simplex const & simplex, SMTConfi
             d_sense.emplace_back('G');
         }
     }
-
-#if 0 && !defined(NDEBUG)
-    std::cout << numNonZeroPerRow << std::endl;
-    std::cout << beginRowIdx << std::endl;
-    std::cout << colIdxs << std::endl;
-    std::cout << values << std::endl;
-    std::cout << d_rhs << std::endl;
-    std::cout << d_sense << std::endl;
-    std::cout << d_range << std::endl;
-#endif
 
     static_assert(sizeof(rat_class) == sizeof(rat_t), "mpq_class layout assumption broken");
     rat_QSadd_ranged_rows(d_qsx, static_cast<int>(numNonZeroPerRow.size()), numNonZeroPerRow.data(), beginRowIdx.data(),
@@ -652,16 +629,6 @@ ExternalQsoptexStrict::ExternalQsoptexStrict(Simplex const & simplex, SMTConfig 
             }
         }
     }
-
-#if 0 && !defined(NDEBUG)
-    std::cout << numNonZeroPerRow << std::endl;
-    std::cout << beginRowIdx << std::endl;
-    std::cout << colIdxs << std::endl;
-    std::cout << values << std::endl;
-    std::cout << d_rhs << std::endl;
-    std::cout << d_sense << std::endl;
-    std::cout << d_range << std::endl;
-#endif
 
     static_assert(sizeof(rat_class) == sizeof(rat_t), "mpq_class layout assumption broken");
     rat_QSadd_ranged_rows(d_qsx, static_cast<int>(numNonZeroPerRow.size()), numNonZeroPerRow.data(), beginRowIdx.data(),

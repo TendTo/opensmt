@@ -100,12 +100,7 @@ bool ExternalLpSolver::alignmentPivot(Simplex & simplex, Solution & sol, LVRef v
         }
     }
 
-    if (best_size == -1) {
-#ifndef NDEBUG
-        std::cerr << "No valid pivot found for variable " << v.x << std::endl;
-#endif
-        return false;
-    }
+    if (best_size == -1) return false;
 
     assert(!sol.newBounds.contains(v) || sol.newBounds.at(v) != VarBoundState::VAR_BOUND_AT_LOWER ||
            simplex.hasLBound(v));

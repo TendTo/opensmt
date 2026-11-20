@@ -67,9 +67,6 @@ Simplex::Explanation Simplex::checkSimplex() {
 #ifdef STATISTICS
             externallp::ExternalLpSolver::stats.lp_setup_time += cpuTime() - init_run_time;
             externallp::ExternalLpSolver::stats.lp_run_time += init_run_time - init_setup_time;
-#if 0 && !defined(NDEBUG)
-            std::cout << "Solution! " << sol << std::endl;
-#endif
 #endif
             externallp::ExternalLpSolver::importSolution(*this, sol);
             external_result = sol.linResult;
