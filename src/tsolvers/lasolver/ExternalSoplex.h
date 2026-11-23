@@ -6,9 +6,10 @@
 #define SOPLEX_WITH_LIGHT_RAT
 
 #include "ExternalLpSolver.h"
-#include <soplex.h>
 
 #ifdef OPENSSMT_ENABLE_SOPLEX
+
+#include <soplex.h>
 
 namespace opensmt::externallp {
 

@@ -486,7 +486,7 @@ std::unique_ptr<ExternalLpSolver> make_external_soplex(Simplex const & simplex, 
 #else
 
 namespace opensmt::externallp {
-std::unique_ptr<ExternalLpSolver> make_external_soplex(SMTConfig const &) {
+std::unique_ptr<ExternalLpSolver> make_external_soplex(Simplex const &, SMTConfig const &) {
     throw std::runtime_error("opensmt was not build with support for the soplex lp solver");
 }
 } // namespace opensmt::externallp
