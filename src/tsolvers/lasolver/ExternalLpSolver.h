@@ -118,6 +118,7 @@ public:
     static void updateNbValue(Simplex & simplex, Solution const & sol, LVRef v);
     static bool isImpossibleToFix(Simplex const & simplex, LVRef v);
     static void importSolution(Simplex & simplex, Solution & sol);
+    static void copySolution(Simplex & simplex, Solution & sol);
     static bool alignmentPivot(Simplex & simplex, Solution & sol, LVRef v);
 
     explicit ExternalLpSolver(Simplex const & simplex, SMTConfig const & config);

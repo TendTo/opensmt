@@ -70,7 +70,7 @@ public:
         candidates.clear();
         bufferOfActivatedBounds.clear();
         assert(checkValueConsistency());
-        assert(invariantHolds());
+        assert(config.delta() >= 0 || invariantHolds());
     }
 
     void allQasiToBasic();

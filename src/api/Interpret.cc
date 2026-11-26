@@ -566,7 +566,7 @@ sstat Interpret::checkSat() {
             notify_formatted(true, "check status which says sat");
 
         }
-        else if ((statusString.compare("unsat") == 0) && (res == s_True)) {
+        else if (config.delta() < 0 && (statusString.compare("unsat") == 0) && (res == s_True)) {
             notify_formatted(true, "check status which says unsat");
         }
     }

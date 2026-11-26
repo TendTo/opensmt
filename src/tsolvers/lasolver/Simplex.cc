@@ -64,12 +64,19 @@ Simplex::Explanation Simplex::checkSimplex() {
             double const init_run_time = cpuTime();
 #endif
             externallp::Solution sol = external_simplex->solve();
+            external_result = sol.linResult;
 #ifdef STATISTICS
             externallp::ExternalLpSolver::stats.lp_setup_time += cpuTime() - init_run_time;
             externallp::ExternalLpSolver::stats.lp_run_time += init_run_time - init_setup_time;
 #endif
+            if (config.delta() >= 0 && external_result == externallp::LinResult::LinFeasible) {
+                // If we have a delta-complete feasible result, trust the LP solver by copying the solution
+                externallp::ExternalLpSolver::copySolution(*this, sol);
+                model->saveAssignment();
+                return Explanation();
+            }
+
             externallp::ExternalLpSolver::importSolution(*this, sol);
-            external_result = sol.linResult;
             external_infeasible_candidate = sol.infeasible_candidate;
             if (external_result == externallp::LinResult::LinError) externallp::ExternalLpSolver::stats.other++;
             if (external_result == externallp::LinResult::LinExhausted) externallp::ExternalLpSolver::stats.exhausted++;
@@ -489,6 +496,7 @@ Real Simplex::computeDelta() const {
 
      In our case, for each variable we need to consider both lower and upper bound (if they exist)
     */
+    if (config.delta() >= 0) return {};
 
     Delta delta_abst;
     bool deltaNotSet = true;

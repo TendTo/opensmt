@@ -277,27 +277,33 @@ void ExternalQsoptex::extractVarValue(int const idx, Solution & sol) const {
                     value = &d_x[idx];
                 }
                 assert(value != nullptr);
-                newValues.emplace(v, Delta(*value));
+                if (simplex.hasLBound(v) && *value <= simplex.Lb(v).R()) {
+                    newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_LOWER);
+                } else if (simplex.hasUBound(v) && *value >= simplex.Ub(v).R()) {
+                    newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_UPPER);
+                } else {
+                    newValues.emplace(v, Delta(*value));
+                }
             } else if constexpr (VarType == VariableType::ROW) {
                 if (d_sense[idx] == 'G' || d_sense[idx] == 'R') {
                     assert(simplex.hasLBound(v));
-                    newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_LOWER);
+                    newBounds.insert_or_assign(v, VarBoundState::VAR_BOUND_AT_LOWER);
                 } else if (d_sense[idx] == 'L') {
                     assert(simplex.hasUBound(v));
-                    newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_UPPER);
+                    newBounds.insert_or_assign(v, VarBoundState::VAR_BOUND_AT_UPPER);
                 } else {
                     assert(false);
                 }
             } else if constexpr (VarType == VariableType::COL) {
                 assert(simplex.hasLBound(v));
-                newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_LOWER);
+                newBounds.insert_or_assign(v, VarBoundState::VAR_BOUND_AT_LOWER);
             } else {
                 assert(false);
             }
             break;
         case QS_COL_BSTAT_UPPER:
             assert(simplex.hasUBound(v));
-            newBounds.emplace(v, VarBoundState::VAR_BOUND_AT_UPPER);
+            newBounds.insert_or_assign(v, VarBoundState::VAR_BOUND_AT_UPPER);
             break;
         default:
             assert(false);
@@ -655,14 +661,8 @@ Solution ExternalQsoptexStrict::extractSolution() {
     assert(d_status == QS_LP_OPTIMAL || d_status == QS_LP_DELTA_OPTIMAL || d_status == QS_LP_FEASIBLE ||
            d_status == QS_LP_DELTA_FEASIBLE || d_status == QS_LP_UNBOUNDED || d_status == QS_LP_INFEASIBLE);
 
-    bool isStrictBasic = d_basis.cstat[numCols() - 1] == QS_COL_BSTAT_BASIC;
-
-#ifndef NDEBUG
-    std::cout << "Strict var value: " << d_x[numCols() - 1] << std::endl;
-#endif
-
     // Set the t-var to 0 to simplify import. It is not needed if the problem is infeasible for some other reason
-    if ((d_status == QS_LP_OPTIMAL || d_status == QS_LP_FEASIBLE || d_status == QS_LP_DELTA_OPTIMAL) && isStrictBasic &&
+    if ((d_status == QS_LP_OPTIMAL || d_status == QS_LP_FEASIBLE || d_status == QS_LP_DELTA_OPTIMAL) &&
         d_x[numCols() - 1].isNonZero()) {
         int res = rat_QSchange_bound(d_qsx, numCols() - 1, 'U', rat_zeroLpNum);
         assert(res == 0);
@@ -674,12 +674,15 @@ Solution ExternalQsoptexStrict::extractSolution() {
         assert(res == 0);
         assert(d_status == QS_LP_OPTIMAL || d_status == QS_LP_DELTA_OPTIMAL || d_status == QS_LP_FEASIBLE ||
                d_status == QS_LP_DELTA_FEASIBLE);
-        isStrictBasic = d_basis.cstat[numCols() - 1] == QS_COL_BSTAT_BASIC;
     }
+
+#ifndef NDEBUG
+    std::cout << "Strict var value: " << d_x[numCols() - 1] << std::endl;
+#endif
 
     // By this point, either the strict variable is basic and at 0,
     // or it is non-basic and we don't care about its value
-    assert(!isStrictBasic || d_x[numCols() - 1].isZero());
+    // assert(!isStrictBasic || d_x[numCols() - 1].isZero());
     assert(d_status == QS_LP_OPTIMAL || d_status == QS_LP_DELTA_OPTIMAL || d_status == QS_LP_FEASIBLE ||
            d_status == QS_LP_DELTA_FEASIBLE || d_status == QS_LP_UNBOUNDED || d_status == QS_LP_INFEASIBLE);
 

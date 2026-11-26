@@ -124,9 +124,6 @@ void ExternalLpSolver::importSolution(Simplex & simplex, Solution & sol) {
 
     auto const & tableau = simplex.getTableau();
 
-    // printf("\n\n*** INITIAL ***\n");
-    // print_simplex_vars_summary(stdout, solver);
-
     for (std::uint32_t x = 0; x < tableau.getNumOfCols(); x++) {
         LVRef const v{.x = x};
         // Only update non-basic variables,
@@ -134,13 +131,27 @@ void ExternalLpSolver::importSolution(Simplex & simplex, Solution & sol) {
         if (!tableau.isNonBasic(v)) continue;
         assert(tableau.isNonBasic(v));
         updateNbValue(simplex, sol, v);
-        assert(simplex.invariantHolds());
+        // The invariant could be broken temporarily due to importing a delta-complete model from a previous iteration,
+        // but should hold after the importing
+        assert(simplex.config.delta() >= 0 || simplex.invariantHolds());
     }
 
+    if (simplex.config.delta() >= 0) {
+        // If we are in delta-complete mode, some out-of-bounds basic variables may not be included in the candidates.
+        // We need to sync that.
+        for (std::uint32_t x = 0; x < tableau.getNumOfCols(); x++) {
+            LVRef const v{.x = x};
+            // Only update basic variables, ensuring that, if they are out of bounds, they are candidates
+            if (!tableau.isBasic(v)) continue;
+            assert(tableau.isBasic(v));
+            if (simplex.isModelOutOfBounds(v)) simplex.candidates.emplace(v);
+        }
+    }
+    assert(simplex.invariantHolds());
     assert(std::ranges::all_of(simplex.candidates, [&simplex](LVRef const var) {
         return var != LVRef::Undef && simplex.tableau.isBasic(var) && simplex.isModelOutOfBounds(var);
     }));
-    assert(std::ranges::all_of(std::views::iota(0u, tableau.getNumOfCols()), [&simplex](std::uint32_t var) {
+    assert(std::ranges::all_of(std::views::iota(0u, tableau.getNumOfCols()), [&simplex](std::uint32_t const var) {
         return !simplex.tableau.isBasic({.x = var}) || !simplex.isModelOutOfBounds({.x = var}) ||
                simplex.candidates.contains({.x = var});
     }));
@@ -214,6 +225,25 @@ void ExternalLpSolver::importSolution(Simplex & simplex, Solution & sol) {
         return !simplex.tableau.isBasic({.x = var}) || !simplex.isModelOutOfBounds({.x = var}) ||
                simplex.candidates.contains({.x = var});
     }));
+}
+
+void ExternalLpSolver::copySolution(Simplex & simplex, Solution & sol) {
+    // We only import solutions that are delta-feasible, ignoring errors and similar situations
+    if (sol.linResult != LinResult::LinFeasible || simplex.config.delta() < 0) return;
+
+    auto const & tableau = simplex.getTableau();
+
+    for (std::uint32_t x = 0; x < tableau.getNumOfCols(); x++) {
+        LVRef const v{.x = x};
+        // Only update non-basic variables,
+        // hoping to get a feasible solution immediately
+        if (!tableau.isNonBasic(v)) continue;
+        assert(tableau.isNonBasic(v));
+        updateNbValue(simplex, sol, v);
+    }
+    // The invariant could be broken temporarily due to importing a delta-complete model from a previous iteration,
+    // but should hold after the importing
+    assert(simplex.invariantHolds());
 }
 
 ExternalLpSolver::ExternalLpSolver(Simplex const & simplex, SMTConfig const & config)
