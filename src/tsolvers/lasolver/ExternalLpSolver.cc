@@ -173,10 +173,9 @@ void ExternalLpSolver::importSolution(Simplex & simplex, Solution & sol) {
     stats.extended_search_count++;
 
     std::unordered_set<LVRef> missing_nb_vars;
-    for (std::uint32_t x = 0; x < tableau.getNumOfCols(); x++) {
-        LVRef const v{.x = x};
+    for (LVRef const v : sol.newNonBasis) {
         // Add the values that are basic but must become non-basic to the set
-        if (tableau.isBasic(v) && sol.newNonBasis.contains(v)) missing_nb_vars.emplace(v);
+        if (tableau.isBasic(v)) missing_nb_vars.emplace(v);
     }
 
     bool performed_pivot = true;
