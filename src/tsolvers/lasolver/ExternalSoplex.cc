@@ -435,8 +435,11 @@ Solution ExternalSoplexStrict::extractSolution() {
     if (sol.linResult != LinResult::LinFeasible && sol.linResult != LinResult::LinInfeasible) return sol;
     assert(d_spx.status() == SpxStatus::INFEASIBLE || d_spx.status() == SpxStatus::OPTIMAL);
 
-    // Set the t-var to 0 to simplify import. It is not needed if the problem is infeasible for some other reason
-    if (d_spx.status() == SpxStatus::OPTIMAL && !d_x[numCols() - 1].is_zero()) {
+    bool const isStrictNonBasic = d_spx.basisColStatus(d_spx.numColsRational() - 1) != VarStatus::BASIC;
+
+    // Set the t-var to 0 to simplify import when the t-var is non-basic.
+    // It is not needed if the problem is infeasible for some other reason
+    if (d_spx.status() == SpxStatus::OPTIMAL && isStrictNonBasic && !d_x[numCols() - 1].is_zero()) {
         assert(d_spx.hasSol());
         assert(d_x.dim() == d_spx.numColsRational());
         d_spx.changeBoundsRational(d_spx.numColsRational() - 1, soplex::Rational(), soplex::Rational());
@@ -452,10 +455,10 @@ Solution ExternalSoplexStrict::extractSolution() {
     if (d_spx.status() == SpxStatus::OPTIMAL) std::cout << "Strict var value: " << d_x[numCols() - 1] << std::endl;
 #endif
 
-    // By this point, either the strict variable is basic and at 0,
-    // or it is non-basic and we don't care about its value
+    // By this point, either the strict variable is non-basic and at 0,
+    // or it is basic and we don't care about its value
     assert(d_spx.status() == SpxStatus::INFEASIBLE || d_spx.status() == SpxStatus::OPTIMAL);
-    assert(d_spx.status() == SpxStatus::INFEASIBLE || d_x[numCols() - 1].is_zero());
+    assert(d_spx.status() == SpxStatus::INFEASIBLE || !isStrictNonBasic || d_x[numCols() - 1].is_zero());
 
     for (int rowIdx = 0; rowIdx < numRows(); rowIdx++) {
         extractVarValue<VariableType::ROW>(rowIdx, sol, d_spx.status() == SpxStatus::INFEASIBLE ? &d_y : nullptr);

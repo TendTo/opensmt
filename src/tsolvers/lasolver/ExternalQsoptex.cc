@@ -660,10 +660,12 @@ Solution ExternalQsoptexStrict::extractSolution() {
     if (sol.linResult != LinResult::LinFeasible && sol.linResult != LinResult::LinInfeasible) return sol;
     assert(d_status == QS_LP_OPTIMAL || d_status == QS_LP_DELTA_OPTIMAL || d_status == QS_LP_FEASIBLE ||
            d_status == QS_LP_DELTA_FEASIBLE || d_status == QS_LP_UNBOUNDED || d_status == QS_LP_INFEASIBLE);
+    bool const isStrictNonBasic = d_basis.cstat[numCols() - 1] != QS_COL_BSTAT_BASIC;
 
-    // Set the t-var to 0 to simplify import. It is not needed if the problem is infeasible for some other reason
+    // Set the t-var to 0 to simplify import when the t-var is non-basic.
+    // It is not needed if the problem is infeasible for some other reason
     if ((d_status == QS_LP_OPTIMAL || d_status == QS_LP_FEASIBLE || d_status == QS_LP_DELTA_OPTIMAL) &&
-        d_x[numCols() - 1].isNonZero()) {
+        isStrictNonBasic && d_x[numCols() - 1].isNonZero()) {
         int res = rat_QSchange_bound(d_qsx, numCols() - 1, 'U', rat_zeroLpNum);
         assert(res == 0);
         rat_class delta{config.delta() >= 0 ? config.delta() : 0.0};
@@ -679,6 +681,10 @@ Solution ExternalQsoptexStrict::extractSolution() {
 #ifndef NDEBUG
     std::cout << "Strict var value: " << d_x[numCols() - 1] << std::endl;
 #endif
+
+    // By this point, either the strict variable is non-basic and at 0,
+    // or it is basic and we don't care about its value
+    assert(!isStrictNonBasic || d_x[numCols() - 1].isZero());
 
     // By this point, either the strict variable is basic and at 0,
     // or it is non-basic and we don't care about its value
